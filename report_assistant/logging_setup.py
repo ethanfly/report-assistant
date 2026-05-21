@@ -29,7 +29,12 @@ _LOG_FILE = _LOG_DIR / "app.log"
 
 
 class _LoggerWriter:
-    """让 print/traceback 之类直接写到 logger 的 file-like 适配器。"""
+    """让 print/traceback 之类直接写到 logger 的 file-like 适配器。
+
+    见 ``setup_logging``：父 logger ``redirect`` 已被设置为
+    ``propagate=False`` 并独占文件 handler，可阻断向 root 的传播，
+    避免 ``StreamHandler(stderr)`` 形成回环。
+    """
 
     def __init__(self, level: int = logging.INFO, name: str = "stdout"):
         self._logger = logging.getLogger(f"redirect.{name}")
@@ -71,6 +76,19 @@ def log_file() -> Path:
     return _LOG_FILE
 
 
+def _make_file_handler(level: int, fmt: logging.Formatter) -> Optional[logging.Handler]:
+    """构造文件 handler，失败返回 None。"""
+    try:
+        h = logging.handlers.RotatingFileHandler(
+            _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        )
+        h.setFormatter(fmt)
+        h.setLevel(level)
+        return h
+    except OSError:
+        return None
+
+
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
     """初始化日志系统，幂等。返回根 logger。"""
     global _INSTALLED
@@ -85,20 +103,15 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 文件 handler：5MB 轮转，保留 5 份
-    try:
-        file_handler = logging.handlers.RotatingFileHandler(
-            _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
-        )
-        file_handler.setFormatter(fmt)
-        file_handler.setLevel(level)
-        root.addHandler(file_handler)
-    except OSError:
-        # 写不了文件就算了，至少不要因为日志而崩
-        pass
+    # ── root logger：文件 + （可选）控制台 ──────────────
+    fh = _make_file_handler(level, fmt)
+    if fh is not None:
+        root.addHandler(fh)
 
-    # 控制台 handler：仅在有 stdout 时挂上（避免 windowed 模式打印到 None）
-    if sys.stderr is not None:
+    # 控制台 handler：仅在有真实 stdout 时挂上。
+    # 关键：必须排除 _LoggerWriter，否则 StreamHandler -> LoggerWriter -> logger
+    # 会形成无限递归（windowed 模式下 stderr=None 经 redirect 后会变成 LoggerWriter）。
+    if sys.stderr is not None and not isinstance(sys.stderr, _LoggerWriter):
         try:
             stream_handler = logging.StreamHandler(sys.stderr)
             stream_handler.setFormatter(fmt)
@@ -108,6 +121,21 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
             pass
 
     root.setLevel(level)
+
+    # ── redirect.* logger：独占一个文件 handler，且 propagate=False ──
+    # 否则 _LoggerWriter -> redirect.stderr -> root.StreamHandler(stderr=LoggerWriter)
+    # -> redirect.stderr ... 形成无限递归。propagate=False 是必需的。
+    redirect_logger = logging.getLogger("redirect")
+    redirect_logger.setLevel(level)
+    redirect_logger.propagate = False
+    if not redirect_logger.handlers:
+        rh = _make_file_handler(level, fmt)
+        if rh is not None:
+            redirect_logger.addHandler(rh)
+        else:
+            # 文件不可写，挂个 NullHandler 防止 "No handlers could be found" 警告
+            redirect_logger.addHandler(logging.NullHandler())
+
     _INSTALLED = True
     return root
 
