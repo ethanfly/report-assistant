@@ -72,8 +72,9 @@ jobs:
           pyinstaller --noconfirm --windowed --onefile `
             --name report-assistant `
             --icon report_assistant/desktop/assets/logo.ico `
+            --collect-all report_assistant `
             --add-data "report_assistant/desktop/assets;report_assistant/desktop/assets" `
-            -m report_assistant.desktop.app
+            entry.py
           Move-Item dist\report-assistant.exe "dist\${{ matrix.asset_name }}"
 
       - name: Build (macOS)
@@ -81,8 +82,9 @@ jobs:
         run: |
           pyinstaller --noconfirm --windowed --onefile \
             --name report-assistant \
+            --collect-all report_assistant \
             --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
-            -m report_assistant.desktop.app
+            entry.py
           cd dist
           if [ -d "report-assistant.app" ]; then
             zip -r "${{ matrix.asset_name }}" "report-assistant.app"
@@ -97,8 +99,9 @@ jobs:
           sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
           pyinstaller --noconfirm --onefile \
             --name report-assistant \
+            --collect-all report_assistant \
             --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
-            -m report_assistant.desktop.app
+            entry.py
           mv dist/report-assistant "dist/${{ matrix.asset_name }}"
 
       - name: Upload artifact
