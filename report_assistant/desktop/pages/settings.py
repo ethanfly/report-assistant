@@ -224,7 +224,7 @@ class SettingsPage(QWidget):
     def _build_system_tab(self) -> QWidget:
         form = QFormLayout()
         form.setSpacing(12)
-        self.chk_autostart = QCheckBox("开机自启（登录系统时自动启动日报助手）")
+        self.chk_autostart = QCheckBox("开机自启（登录系统时自动启动小T日报助手）")
         self.spin_keep_days = NumberInput(
             minimum=0, maximum=3650, value=60, suffix=" 天",
             special_value_text="不自动清理",

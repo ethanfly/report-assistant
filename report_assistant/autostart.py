@@ -15,7 +15,7 @@ from typing import Optional
 
 
 APP_ID = "report-assistant"
-APP_NAME = "日报助手"
+APP_NAME = "小T日报助手"
 
 
 def _launch_command() -> Optional[list[str]]:

@@ -1,4 +1,4 @@
-# report-assistant · 日报助手
+# report-assistant · 小T日报助手
 
 <p align="center">
   <img src="report_assistant/desktop/assets/logo_128.png" width="96" alt="logo"/>

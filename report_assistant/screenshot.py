@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +16,9 @@ from typing import Optional
 from .config import Config
 from .llm import LLMClient, LLMError
 from .storage import Storage
+
+
+logger = logging.getLogger("screenshot")
 
 
 VISION_PROMPT = """你是工作内容识别助手。请分析这张屏幕截图，识别用户当前正在做什么工作。
@@ -249,5 +253,8 @@ def watch(
             if on_capture:
                 on_capture(shot)
         except (LLMError, RuntimeError) as e:
-            print(f"[warn] 截图分析失败: {e}")
+            logger.warning("截图分析失败: %s", e)
+        except Exception:
+            # CLI 长驻同样需要兜底，避免一次异常打断整个 watch 循环
+            logger.exception("截图分析未预期异常")
         time.sleep(interval)

@@ -1,6 +1,7 @@
 """主窗口：左侧导航 + 右侧多页面 + 全局监听状态 + 系统托盘。"""
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from PySide6.QtCore import Qt, QSize, Signal, QTimer
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..config import Config
 from ..storage import Storage
 from ..generator import collect_data
+from ..logging_setup import open_log_dir
 from .assets import icon_path
 from .pages.home import HomePage
 from .pages.reports import ReportsPage
@@ -20,6 +22,9 @@ from .pages.settings import SettingsPage
 from .pages.timeline import TimelinePage
 from .theme import PRIMARY
 from .workers import WatchWorker, start_in_thread
+
+
+logger = logging.getLogger("desktop.main_window")
 
 
 NAV_ITEMS = [
@@ -74,7 +79,7 @@ class Sidebar(QWidget):
             logo_label.setPixmap(pix)
         else:
             logo_label.setStyleSheet(f"background:{PRIMARY}; border-radius:8px;")
-        title = QLabel("日报助手")
+        title = QLabel("小T日报助手")
         title.setObjectName("SidebarLogo")
         title.setStyleSheet("padding: 0;")
         lr.addWidget(logo_label)
@@ -137,7 +142,7 @@ class MainWindow(QMainWindow):
     def __init__(self, cfg: Config, storage: Storage, app_icon: Optional[QIcon] = None):
         super().__init__()
         self.setObjectName("MainWindow")
-        self.setWindowTitle("日报助手 — AI 工作日报生成工具")
+        self.setWindowTitle("小T日报助手 — AI 工作日报生成工具")
         self.app_icon = app_icon if (app_icon and not app_icon.isNull()) else _make_dot_icon()
         self.setWindowIcon(self.app_icon)
 
@@ -351,10 +356,11 @@ class MainWindow(QMainWindow):
     def _init_tray(self) -> None:
         self.tray_action_toggle: Optional[QAction] = None
         if not QSystemTrayIcon.isSystemTrayAvailable():
+            logger.warning("系统托盘不可用，将以\"关闭即隐藏\"方式继续后台运行")
             self.tray = None
             return
         self.tray = QSystemTrayIcon(self.app_icon, self)
-        self.tray.setToolTip("日报助手")
+        self.tray.setToolTip("小T日报助手")
 
         menu = QMenu(self)
         a_show = QAction("显示主窗口", self)
@@ -364,6 +370,11 @@ class MainWindow(QMainWindow):
         self.tray_action_toggle = QAction("开始监听", self)
         self.tray_action_toggle.triggered.connect(self._tray_toggle_watch)
         menu.addAction(self.tray_action_toggle)
+
+        menu.addSeparator()
+        a_logs = QAction("打开日志目录", self)
+        a_logs.triggered.connect(lambda: open_log_dir())
+        menu.addAction(a_logs)
 
         menu.addSeparator()
         a_quit = QAction("退出", self)
@@ -390,6 +401,8 @@ class MainWindow(QMainWindow):
             self.start_watch()
 
     def _quit_app(self) -> None:
+        logger.info("用户主动退出应用")
+        self._force_quit = True  # closeEvent 不再拦截
         if self.is_watching():
             self.stop_watch()
         if self.tray:
@@ -398,13 +411,27 @@ class MainWindow(QMainWindow):
 
     # ── 关闭：默认最小化到托盘 ─────────────────────────
     def closeEvent(self, event) -> None:
-        if self.tray and self.tray.isVisible():
-            self.hide()
-            self.tray.showMessage(
-                "日报助手", "已最小化到托盘，监听仍在后台运行。",
-                QSystemTrayIcon.MessageIcon.Information, 2500,
-            )
-            event.ignore()
-        else:
-            self._quit_app()
+        # 已显式触发退出（_quit_app 设过这个标志），允许窗口正常关闭
+        if getattr(self, "_force_quit", False):
             event.accept()
+            return
+
+        # 有托盘：隐藏到托盘 + 提示
+        if self.tray is not None and self.tray.isVisible():
+            self.hide()
+            try:
+                self.tray.showMessage(
+                    "小T日报助手", "已最小化到托盘，监听仍在后台运行。",
+                    QSystemTrayIcon.MessageIcon.Information, 2500,
+                )
+            except Exception:
+                logger.debug("托盘通知失败", exc_info=True)
+            event.ignore()
+            return
+
+        # 没有托盘（或托盘失效）：仍然不退出，只隐藏。
+        # 用户要真正退出请用托盘菜单的"退出"按钮。
+        # 这能避免被关闭按钮意外杀掉后台监听。
+        logger.info("托盘不可用，关闭按钮触发：隐藏窗口、保持后台运行")
+        self.hide()
+        event.ignore()
