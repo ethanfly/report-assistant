@@ -1,0 +1,173 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest -q
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset_name: report-assistant-${{ github.run_number }}-windows-x64.exe
+          - os: macos-latest
+            asset_name: report-assistant-${{ github.run_number }}-macos.zip
+          - os: ubuntu-latest
+            asset_name: report-assistant-${{ github.run_number }}-linux-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[gui]"
+          pip install pyinstaller
+
+      - name: Generate icon assets
+        run: |
+          python -m report_assistant.desktop.assets.generate_logo
+          python -m report_assistant.desktop.assets.generate_arrows
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --windowed --onefile `
+            --name report-assistant `
+            --icon report_assistant/desktop/assets/logo.ico `
+            --add-data "report_assistant/desktop/assets;report_assistant/desktop/assets" `
+            -m report_assistant.desktop.app
+          Move-Item dist\report-assistant.exe "dist\${{ matrix.asset_name }}"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --noconfirm --windowed --onefile \
+            --name report-assistant \
+            --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
+            -m report_assistant.desktop.app
+          cd dist
+          if [ -d "report-assistant.app" ]; then
+            zip -r "${{ matrix.asset_name }}" "report-assistant.app"
+          else
+            zip "${{ matrix.asset_name }}" "report-assistant"
+          fi
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
+          pyinstaller --noconfirm --onefile \
+            --name report-assistant \
+            --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
+            -m report_assistant.desktop.app
+          mv dist/report-assistant "dist/${{ matrix.asset_name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: ver
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="v0.1.${{ github.run_number }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (${SHORT_SHA})"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            LOG=$(git log --pretty=format:"- %s (%h)" "${LAST_TAG}..HEAD")
+          else
+            LOG=$(git log --pretty=format:"- %s (%h)" -30)
+          fi
+          {
+            echo "changelog<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          body: |
+            构建编号：${{ github.run_number }}
+            提交：${{ steps.ver.outputs.short_sha }}
+
+            ## 变更
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## 下载
+            - **Windows**：`*-windows-x64.exe`
+            - **macOS**：`*-macos.zip`
+            - **Linux**：`*-linux-x64`
+          files: artifacts/*
+          draft: false
+          prerelease: false
+          generate_release_notes: false

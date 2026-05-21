@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+build/
+dist/
+.eggs/
+
+# Project
+data/
+*.sqlite
+*.sqlite-journal
+.report-assistant/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local
+*.local.yml
+report-assistant.yml
+
+# PyInstaller
+*.spec

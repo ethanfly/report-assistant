@@ -1,0 +1,39 @@
+# report-assistant 配置示例
+# 复制为 report-assistant.yml（项目根目录）或 ~/.report-assistant/config.yml
+
+llm:
+  provider: openai
+  base_url: https://api.openai.com/v1
+  api_key: "sk-..."             # 也可用环境变量 REPORT_ASSISTANT_API_KEY
+  model: gpt-4o-mini
+  vision_model: gpt-4o-mini     # 截图分析的多模态模型
+  temperature: 0.4
+  timeout: 60
+
+git:
+  repos:
+    - C:/workspace/my-project
+    - C:/workspace/another-project
+  author_emails:
+    - me@example.com
+  author_names:
+    - Ethan
+  include_merges: false
+  poll_interval_seconds: 600  # 桌面端定时同步 git 间隔；<=0 关闭
+
+screenshot:
+  enabled: true
+  interval_seconds: 600         # watch 模式下截图间隔
+  keep_after_analysis: false    # 隐私优先：分析完即删
+  output_dir: ~/.report-assistant/screenshots
+  auto_start: false             # 桌面端启动后自动开始监听
+  monitor_index: 1              # 0=合并所有屏幕；1+=具体某个屏幕
+  idle_skip_seconds: 300        # 连续无操作 N 秒后跳过截图；0=不检测
+
+report:
+  default_template: standard    # standard / concise / technical / okr
+  language: zh-CN
+  user_name: 张三
+  team: 平台研发组
+
+db_path: ~/.report-assistant/data.sqlite
