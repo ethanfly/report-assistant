@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
@@ -142,7 +142,8 @@ class HomePage(QWidget):
         self.monitor_row.setSpacing(10)
         ml.addLayout(self.monitor_row)
         self._monitor_buttons: list[QPushButton] = []
-        self._build_monitors()
+        # mss 首次加载会同步打开 DLL，放到事件循环空闲后再做以避免阻塞首屏
+        QTimer.singleShot(0, self._build_monitors)
         root.addWidget(mon_card)
 
         # 最近工作流水

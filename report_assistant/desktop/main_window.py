@@ -16,10 +16,9 @@ from ..storage import Storage
 from ..generator import collect_data
 from ..logging_setup import open_log_dir
 from .assets import icon_path
-from .pages.home import HomePage
-from .pages.reports import ReportsPage
-from .pages.settings import SettingsPage
-from .pages.timeline import TimelinePage
+# 注意：page 模块改为按需 import（懒加载），避免启动时同步
+# 拉起所有页面（list_monitors / 数据库查询 / 注册定时器等），
+# 让首屏更快显示。
 from .theme import PRIMARY
 from .workers import WatchWorker, start_in_thread
 
@@ -141,6 +140,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, cfg: Config, storage: Storage, app_icon: Optional[QIcon] = None):
         super().__init__()
+        logger.info("MainWindow.__init__ 开始")
         self.setObjectName("MainWindow")
         self.setWindowTitle("小T日报助手 — AI 工作日报生成工具")
         self.app_icon = app_icon if (app_icon and not app_icon.isNull()) else _make_dot_icon()
@@ -165,28 +165,30 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
 
-        # 页面
+        # 页面：仅首页立即创建，其他页改为懒加载，显著降低首屏耗时
+        from .pages.home import HomePage
+        logger.info("init: HomePage 开始构造")
         self.page_home = HomePage(self)
-        self.page_timeline = TimelinePage(self)
-        self.page_reports = ReportsPage(self)
-        self.page_settings = SettingsPage(self)
-        self._pages = {
-            "home": self.page_home,
-            "timeline": self.page_timeline,
-            "reports": self.page_reports,
-            "settings": self.page_settings,
+        logger.info("init: HomePage 构造完成")
+        self._page_factories = {
+            "home": lambda: self.page_home,
+            "timeline": self._build_timeline_page,
+            "reports": self._build_reports_page,
+            "settings": self._build_settings_page,
         }
-        for p in self._pages.values():
-            self.stack.addWidget(p)
+        self._pages: dict = {"home": self.page_home}
+        self.stack.addWidget(self.page_home)
 
         # 状态栏
         self.setStatusBar(QStatusBar())
         self._update_status_hint()
 
         # 系统托盘
+        logger.info("init: 初始化托盘")
         self._init_tray()
 
         # 默认显示首页
+        logger.info("init: 切到首页")
         self.switch_page("home")
 
         # 配置变更通知
@@ -197,26 +199,62 @@ class MainWindow(QMainWindow):
         self._git_timer.timeout.connect(self.sync_git)
         self._restart_git_timer()
 
-        # 启动后行为：自动清理过期数据
-        self._auto_cleanup()
+        # 启动后行为：延后 1.5s 再做 IO 密集动作（数据清理 + 启动监听），
+        # 让主线程先把窗口绘制完，避免被 Windows 标记为"未响应"。
+        QTimer.singleShot(1500, self._auto_cleanup)
 
         # 启动后行为：若没配 API Key，引导到设置页；否则按用户设置自动开监听
         if not self.cfg.llm.api_key:
-            self.switch_page("settings")
+            QTimer.singleShot(0, lambda: self.switch_page("settings"))
             self.statusBar().showMessage(
                 "欢迎！请先填写 LLM API Key 并点击\"测试连接\"。", 0,
             )
         elif self.cfg.screenshot.auto_start:
-            QTimer.singleShot(1000, self.start_watch)
+            QTimer.singleShot(2500, self.start_watch)
+
+        logger.info("MainWindow.__init__ 完成")
 
     # ── 页面 ──────────────────────────────────────────
+    def _build_timeline_page(self):
+        from .pages.timeline import TimelinePage
+        logger.info("lazy: 构造 TimelinePage")
+        p = TimelinePage(self)
+        self.page_timeline = p
+        return p
+
+    def _build_reports_page(self):
+        from .pages.reports import ReportsPage
+        logger.info("lazy: 构造 ReportsPage")
+        p = ReportsPage(self)
+        self.page_reports = p
+        return p
+
+    def _build_settings_page(self):
+        from .pages.settings import SettingsPage
+        logger.info("lazy: 构造 SettingsPage")
+        p = SettingsPage(self)
+        self.page_settings = p
+        return p
+
+    def _ensure_page(self, key: str):
+        """按需创建页面并加入 stack。"""
+        if key in self._pages:
+            return self._pages[key]
+        factory = self._page_factories.get(key)
+        if factory is None:
+            return None
+        page = factory()
+        self._pages[key] = page
+        self.stack.addWidget(page)
+        return page
+
     def switch_page(self, key: str) -> None:
-        if key not in self._pages:
+        page = self._ensure_page(key)
+        if page is None:
             return
-        self.stack.setCurrentWidget(self._pages[key])
+        self.stack.setCurrentWidget(page)
         self.sidebar.select(key)
         # 给页面一次"激活"机会刷新数据
-        page = self._pages[key]
         if hasattr(page, "on_activated"):
             page.on_activated()
 
@@ -279,9 +317,13 @@ class MainWindow(QMainWindow):
             self.stop_watch()
         self._restart_git_timer()
         self._update_status_hint()
-        for p in self._pages.values():
+        # 只通知已经创建过的页面，避免提前实例化未访问页
+        for p in list(self._pages.values()):
             if hasattr(p, "on_config_changed"):
-                p.on_config_changed()
+                try:
+                    p.on_config_changed()
+                except Exception:
+                    logger.exception("page.on_config_changed 异常")
 
     def _update_status_hint(self) -> None:
         if not self.cfg.llm.api_key:
