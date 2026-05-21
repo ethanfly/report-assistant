@@ -292,21 +292,29 @@ class MainWindow(QMainWindow):
             self._git_timer.start(max(30, interval) * 1000)
 
     def sync_git(self) -> None:
-        """主动同步今日 git 提交。失败不抛错，仅状态栏提示。"""
-        from datetime import datetime
-        try:
-            _, _, commits, _ = collect_data(
-                self.cfg, self.storage, "daily", anchor=datetime.now(),
-                include_screenshots=False,
+        """主动同步今日 git 提交。异步执行，避免阻塞 UI。"""
+        if getattr(self, "_git_sync_running", False):
+            return  # 上一次还没结束，直接忽略
+        if not self.cfg.git.repos:
+            return
+        from .workers import GitSyncWorker, start_in_thread
+        self._git_sync_running = True
+        worker = GitSyncWorker(self.cfg, self.storage)
+        worker.finished.connect(self._on_git_sync_done)
+        worker.failed.connect(self._on_git_sync_failed)
+        start_in_thread(self, worker)
+
+    def _on_git_sync_done(self, count: int) -> None:
+        self._git_sync_running = False
+        self.git_synced.emit(count)
+        if count:
+            self.statusBar().showMessage(
+                f"Git 同步完成：今日 {count} 条提交", 3000,
             )
-            count = len(commits)
-            self.git_synced.emit(count)
-            if count:
-                self.statusBar().showMessage(
-                    f"Git 同步完成：今日 {count} 条提交", 3000,
-                )
-        except Exception as e:
-            self.statusBar().showMessage(f"Git 同步失败: {e}", 5000)
+
+    def _on_git_sync_failed(self, msg: str) -> None:
+        self._git_sync_running = False
+        self.statusBar().showMessage(f"Git 同步失败: {msg[:120]}", 5000)
 
     # ── 数据清理 ─────────────────────────────────────
     def _auto_cleanup(self) -> None:

@@ -162,6 +162,30 @@ class TestConnectionWorker(QObject):
         self.finished.emit(ok, msg)
 
 
+class GitSyncWorker(QObject):
+    """异步 Git 同步：扫描所有仓库 → 入库；放在 worker 线程避免阻塞 UI。"""
+
+    finished = Signal(int)  # 同步到的提交条数
+    failed = Signal(str)
+
+    def __init__(self, cfg: Config, storage: Storage):
+        super().__init__()
+        self.cfg = cfg
+        self.storage = storage
+
+    def run(self) -> None:
+        from datetime import datetime
+        from ..generator import collect_data
+        try:
+            _, _, commits, _ = collect_data(
+                self.cfg, self.storage, "daily", anchor=datetime.now(),
+                include_screenshots=False,
+            )
+            self.finished.emit(len(commits))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 def start_in_thread(parent: QObject, worker: QObject) -> QThread:
     """通用工具：把 worker.run() 跑到一个新线程里。
 

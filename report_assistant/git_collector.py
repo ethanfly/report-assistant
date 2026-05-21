@@ -6,12 +6,19 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from dateutil import parser as dtparser
+
+
+# Windows: 防止打包后调用 git 时弹出黑色 cmd 窗口
+_SUBPROCESS_FLAGS = 0
+if sys.platform == "win32":
+    _SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
 
 
 @dataclass
@@ -67,6 +74,7 @@ def _run_git(repo: Path, args: list[str]) -> str:
             encoding="utf-8",
             errors="replace",
             check=False,
+            creationflags=_SUBPROCESS_FLAGS,
         )
     except FileNotFoundError as e:
         raise RuntimeError("未找到 git 命令，请先安装 git。") from e

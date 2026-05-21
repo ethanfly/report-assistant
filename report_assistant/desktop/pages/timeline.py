@@ -184,13 +184,9 @@ class TimelinePage(QWidget):
         start = datetime.combine(d, dtime.min)
         end = datetime.combine(d, dtime.max)
 
-        # 主动拉该日 git 提交（幂等入库）
-        try:
-            anchor = datetime.combine(d, dtime(12, 0))
-            collect_data(self.main.cfg, self.main.storage, "daily", anchor=anchor,
-                         include_screenshots=False)
-        except Exception as e:
-            self.main.statusBar().showMessage(f"Git 同步失败: {e}", 3000)
+        # Git 同步走异步，不阻塞 UI；完成后通过 git_synced 信号刷新
+        if d == datetime.now().date():
+            self.main.sync_git()
 
         idx = self.combo_filter.currentIndex()
         source = FILTERS[idx][1] if 0 <= idx < len(FILTERS) else ""

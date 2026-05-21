@@ -178,14 +178,8 @@ class HomePage(QWidget):
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=1)
 
-        # 主动拉今天的 git（collect_data 内部幂等入库），
-        # 让首页统计反映最新的 commit 而不是只看历史 SQLite。
-        # git_collector 对单个仓库失败已有容错，这里再兜一层避免影响 UI。
-        try:
-            collect_data(self.main.cfg, self.main.storage, "daily", anchor=now,
-                         include_screenshots=False)
-        except Exception as e:
-            self.main.statusBar().showMessage(f"Git 同步失败: {e}", 3000)
+        # Git 同步走异步，不阻塞 UI；完成后通过 git_synced 信号回调本页 refresh
+        self.main.sync_git()
 
         logs = self.main.storage.list_work_logs(start, end)
         commits = [l for l in logs if l["source"] == "git"]
