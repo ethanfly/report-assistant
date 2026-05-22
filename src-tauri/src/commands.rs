@@ -302,7 +302,11 @@ pub async fn is_watching(state: State<'_, AppStateHandle>) -> Result<bool, Strin
 // Git
 // ---------------------------------------------------------------------------
 
-/// 拉取近 30 天 Git 提交并入库（dedupe），返回本次 commits 总条数。
+/// 拉取最近一段时间的 Git 提交并入库（dedupe），返回本次 commits 总条数。
+///
+/// 时间窗口对齐自动清理保留天数 `cfg.app.cleanup_keep_days`：
+/// 自动清理会删 N 天前的所有记录，再去同步更老的提交毫无意义；
+/// `<= 0` 表示不限制（保底兜到 365 天，避免全仓库扫描过慢）。
 #[tauri::command]
 pub async fn sync_git(state: State<'_, AppStateHandle>) -> Result<usize, String> {
     let cfg = state.config.lock().clone();
@@ -310,8 +314,9 @@ pub async fn sync_git(state: State<'_, AppStateHandle>) -> Result<usize, String>
     // git 收集是同步阻塞操作，扔到 blocking thread 上执行。
     let kind = templates::Kind::Daily;
     let count = tokio::task::spawn_blocking(move || {
-        // 用 daily 拿不到长跨度，这里换成最近 30 天直接调底层。
-        let since = Local::now() - chrono::Duration::days(30);
+        let keep_days = cfg.app.cleanup_keep_days;
+        let span_days = if keep_days > 0 { keep_days } else { 365 };
+        let since = Local::now() - chrono::Duration::days(span_days);
         let until = Local::now();
         let commits = report_assistant_core::git::collect_for_user(&cfg.git, since, until)?;
         for c in &commits {

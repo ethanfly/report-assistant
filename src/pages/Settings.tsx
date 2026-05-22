@@ -26,6 +26,7 @@ import Tabs from '../components/Tabs';
 import Spinner from '../components/Spinner';
 import { Input, Select } from '../components/Input';
 import {
+  listTemplates,
   openLogDir,
   purgeAll,
   purgeBefore,
@@ -33,7 +34,7 @@ import {
   testLlmConnection,
 } from '../api/ipc';
 import { useConfig } from '../hooks/useConfig';
-import type { Config, StorageStats } from '../api/types';
+import type { Config, ReportTemplate, StorageStats } from '../api/types';
 import { useToast } from '../hooks/useToast';
 import dayjs from 'dayjs';
 
@@ -55,6 +56,15 @@ export default function Settings() {
   const [draft, setDraft] = useState<Config | null>(null);
   const [testing, setTesting] = useState(false);
   const [stats, setStats] = useState<StorageStats | null>(null);
+  // 报告模板列表（来自后端 listTemplates）
+  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
+
+  // 拉取模板（一次性，挂载时）
+  useEffect(() => {
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, []);
   const [purging, setPurging] = useState(false);
   const [purgeDays, setPurgeDays] = useState(30);
 
@@ -489,8 +499,8 @@ export default function Settings() {
             hoverable={false}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                label="默认模板 Key"
+              <Select
+                label="默认模板"
                 value={draft.report.default_template}
                 onChange={(e) =>
                   update('report', {
@@ -498,8 +508,19 @@ export default function Settings() {
                     default_template: e.target.value,
                   })
                 }
-                placeholder="daily_default"
-              />
+              >
+                {templates.length === 0 ? (
+                  <option value={draft.report.default_template}>
+                    {draft.report.default_template || 'standard'}
+                  </option>
+                ) : (
+                  templates.map((t) => (
+                    <option key={t.key} value={t.key}>
+                      {t.label}（{t.key}）
+                    </option>
+                  ))
+                )}
+              </Select>
               <Select
                 label="语言"
                 value={draft.report.language}
