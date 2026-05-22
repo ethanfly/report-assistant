@@ -95,17 +95,22 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 let state: tauri::State<'_, crate::state::AppStateHandle> = app_handle.state();
-                let (auto_start, has_key) = {
+                let (auto_start, has_vision) = {
                     let cfg = state.config.lock();
-                    (cfg.screenshot.auto_start, !cfg.llm.api_key.trim().is_empty())
+                    let has = cfg
+                        .llm
+                        .resolve_vision()
+                        .map(|p| !p.api_key.trim().is_empty())
+                        .unwrap_or(false);
+                    (cfg.screenshot.auto_start, has)
                 };
-                if auto_start && has_key {
+                if auto_start && has_vision {
                     tracing::info!("auto_start 已启用，自动开始监听");
                     if let Err(e) = commands::launch_watch(&app_handle, &state) {
                         tracing::warn!("auto_start 启动失败: {}", e);
                     }
-                } else if auto_start && !has_key {
-                    tracing::warn!("auto_start 已启用但 LLM API Key 未配置，跳过");
+                } else if auto_start && !has_vision {
+                    tracing::warn!("auto_start 已启用但默认视觉 provider 未配置，跳过");
                 }
             });
 

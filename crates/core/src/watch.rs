@@ -135,8 +135,20 @@ async fn run_loop(
     stop: Arc<std::sync::atomic::AtomicBool>,
     interval: u64,
 ) {
-    // 构造 LLM 客户端
-    let llm = match LlmClient::new(cfg.llm.clone()) {
+    // 构造 LLM 客户端：监听必须有"默认视觉模型"
+    let vision_provider = match cfg.llm.resolve_vision() {
+        Some(p) => p.clone(),
+        None => {
+            let msg = "未配置默认视觉模型，无法启动监听。请在设置 → LLM 中先添加并指定一个视觉 provider。";
+            error!("{}", msg);
+            let _ = tx.send(WatchEvent::Failed {
+                message: msg.to_string(),
+            });
+            let _ = tx.send(WatchEvent::Stopped);
+            return;
+        }
+    };
+    let llm = match LlmClient::new(vision_provider) {
         Ok(c) => c,
         Err(e) => {
             error!("WatchWorker LLM 初始化失败: {}", e);

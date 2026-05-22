@@ -412,7 +412,12 @@ fn serde_yaml_to_string<T: Serialize>(v: &T) -> Result<String> {
 async fn cmd_capture(json: bool) -> Result<()> {
     let cfg = core::config::load()?;
     let storage = open_storage(&cfg)?;
-    let llm = LlmClient::new(cfg.llm.clone()).context("LLM 客户端构造失败")?;
+    let vision = cfg
+        .llm
+        .resolve_vision()
+        .ok_or_else(|| anyhow!("未配置默认视觉模型，请先在 config 中指定"))?
+        .clone();
+    let llm = LlmClient::new(vision).context("LLM 客户端构造失败")?;
 
     let dir = cfg.resolved_screenshot_dir()?;
     let monitor_index = cfg.screenshot.monitor_index;
@@ -666,7 +671,12 @@ async fn cmd_report(cmd: ReportCmd, json: bool) -> Result<()> {
 async fn cmd_report_generate(kind: Kind, args: GenArgs, json: bool) -> Result<()> {
     let cfg = core::config::load()?;
     let storage = open_storage(&cfg)?;
-    let llm = LlmClient::new(cfg.llm.clone()).context("LLM 客户端构造失败")?;
+    let text_provider = cfg
+        .llm
+        .resolve_text()
+        .ok_or_else(|| anyhow!("未配置默认文本模型，请先在 config 中指定"))?
+        .clone();
+    let llm = LlmClient::new(text_provider).context("LLM 客户端构造失败")?;
 
     let anchor = parse_anchor(args.date.as_deref())?;
 
@@ -825,14 +835,28 @@ async fn cmd_llm(cmd: LlmCmd, json: bool) -> Result<()> {
     match cmd {
         LlmCmd::Test => {
             let cfg = core::config::load()?;
-            let (ok, msg) = check_connection(&cfg.llm).await;
+            let provider = match cfg.llm.resolve_text() {
+                Some(p) => p.clone(),
+                None => {
+                    if json {
+                        return print_json(&serde_json::json!({
+                            "ok": false,
+                            "message": "未配置默认文本模型，请先指定 default_text_id"
+                        }));
+                    } else {
+                        eprintln!("✗ 未配置默认文本模型，请先指定 default_text_id");
+                        std::process::exit(1);
+                    }
+                }
+            };
+            let (ok, msg) = check_connection(&provider).await;
 
             if json {
                 print_json(&serde_json::json!({
                     "ok": ok,
                     "message": msg,
-                    "model": cfg.llm.model,
-                    "base_url": cfg.llm.base_url,
+                    "model": provider.model,
+                    "base_url": provider.base_url,
                 }))
             } else {
                 if ok {

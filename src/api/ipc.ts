@@ -5,7 +5,7 @@ import type {
   ExportFormat,
   GenerateRequest,
   GenerateResult,
-  LlmConfig,
+  LlmProvider,
   MonitorInfo,
   PurgeStats,
   Report,
@@ -66,8 +66,8 @@ export const exportReport = (id: number, format: ExportFormat, outDir: string) =
   invoke<string>('export_report', { id, format, outDir });
 
 // ===== LLM =====
-export const testLlmConnection = (cfg: LlmConfig) =>
-  invoke<[boolean, string]>('test_llm_connection', { cfg });
+export const testLlmConnection = (provider: LlmProvider) =>
+  invoke<[boolean, string]>('test_llm_connection', { provider });
 
 // ===== 其它 =====
 export const openLogDir = () => invoke<void>('open_log_dir');

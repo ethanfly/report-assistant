@@ -12,7 +12,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::{Error, Result, config::LlmConfig};
+use crate::{Error, Result, config::LlmProvider};
 
 /// 角色枚举（保留供调用方按强类型构造，序列化时仍以小写字符串呈现）。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -52,20 +52,38 @@ impl ChatMessage {
     }
 }
 
-/// LLM 客户端：包装 reqwest::Client + 配置。
+/// LLM 客户端：基于单个 provider 构造。
+///
+/// 文本生成用 `cfg.llm.resolve_text()` 拿到的 provider；
+/// 视觉分析用 `cfg.llm.resolve_vision()`。同一个 client 不再混用两种模型，
+/// 避免之前 `vision_model` 共用 base_url/api_key 的耦合。
 pub struct LlmClient {
-    cfg: LlmConfig,
+    provider: LlmProvider,
     http: reqwest::Client,
 }
 
 impl LlmClient {
     /// 构造客户端。`api_key` 为空时返回错误。
-    pub fn new(cfg: LlmConfig) -> Result<Self> {
-        if cfg.api_key.trim().is_empty() {
-            return Err(Error::llm("未配置 LLM api_key，请先在配置中填写"));
+    pub fn new(provider: LlmProvider) -> Result<Self> {
+        if provider.api_key.trim().is_empty() {
+            return Err(Error::llm(format!(
+                "LLM provider 「{}」未配置 api_key",
+                if provider.name.is_empty() { provider.id.as_str() } else { provider.name.as_str() }
+            )));
         }
-        let http = build_client(&cfg, cfg.timeout)?;
-        Ok(Self { cfg, http })
+        let http = build_client(&provider, provider.timeout)?;
+        Ok(Self { provider, http })
+    }
+
+    /// 当前 provider 的可读名（优先 name，回退 id，再回退 model）。
+    pub fn label(&self) -> String {
+        if !self.provider.name.is_empty() {
+            self.provider.name.clone()
+        } else if !self.provider.id.is_empty() {
+            self.provider.id.clone()
+        } else {
+            self.provider.model.clone()
+        }
     }
 
     /// 文本对话，返回助手回复内容。
@@ -75,12 +93,12 @@ impl LlmClient {
         model: Option<&str>,
         temperature: Option<f32>,
     ) -> Result<String> {
-        let model = model.unwrap_or(&self.cfg.model);
-        let temp = temperature.unwrap_or(self.cfg.temperature);
-        chat_request(&self.http, &self.cfg.base_url, model, temp, &messages).await
+        let model = model.unwrap_or(&self.provider.model);
+        let temp = temperature.unwrap_or(self.provider.temperature);
+        chat_request(&self.http, &self.provider.base_url, model, temp, &messages).await
     }
 
-    /// 图片视觉分析：读取本地图片转 base64 data URL，调用 vision_model。
+    /// 图片视觉分析：读取本地图片转 base64 data URL，使用当前 provider 的 model。
     pub async fn analyze_image(
         &self,
         image_path: impl AsRef<Path>,
@@ -101,16 +119,11 @@ impl LlmClient {
             content,
         }];
 
-        let model = if self.cfg.vision_model.trim().is_empty() {
-            self.cfg.model.as_str()
-        } else {
-            self.cfg.vision_model.as_str()
-        };
         chat_request(
             &self.http,
-            &self.cfg.base_url,
-            model,
-            self.cfg.temperature,
+            &self.provider.base_url,
+            &self.provider.model,
+            self.provider.temperature,
             &messages,
         )
         .await
@@ -120,22 +133,30 @@ impl LlmClient {
 /// 一次性快速连通性检查：发送一个简短 ping，限定较短超时；绝不 panic。
 ///
 /// 返回：(是否成功, 描述信息)
-pub async fn check_connection(cfg: &LlmConfig) -> (bool, String) {
-    if cfg.api_key.trim().is_empty() {
+pub async fn check_connection(provider: &LlmProvider) -> (bool, String) {
+    if provider.api_key.trim().is_empty() {
         return (false, "未配置 api_key".to_string());
     }
-    let timeout = cfg.timeout.min(15).max(1);
-    let http = match build_client(cfg, timeout) {
+    let timeout = provider.timeout.min(15).max(1);
+    let http = match build_client(provider, timeout) {
         Ok(c) => c,
         Err(e) => return (false, format!("初始化 HTTP 客户端失败: {e}")),
     };
     let messages = vec![ChatMessage::text("user", "ping")];
-    match chat_request(&http, &cfg.base_url, &cfg.model, cfg.temperature, &messages).await {
+    match chat_request(
+        &http,
+        &provider.base_url,
+        &provider.model,
+        provider.temperature,
+        &messages,
+    )
+    .await
+    {
         Ok(reply) => {
             let snippet: String = reply.chars().take(40).collect();
             (
                 true,
-                format!("连接成功（model={}）: {}", cfg.model, snippet),
+                format!("连接成功（model={}）: {}", provider.model, snippet),
             )
         }
         Err(e) => (false, format!("连接失败: {e}")),
@@ -145,7 +166,7 @@ pub async fn check_connection(cfg: &LlmConfig) -> (bool, String) {
 // ---------------- 内部辅助 ----------------
 
 /// 构造带鉴权头与超时的 reqwest::Client。
-fn build_client(cfg: &LlmConfig, timeout_secs: u64) -> Result<reqwest::Client> {
+fn build_client(cfg: &LlmProvider, timeout_secs: u64) -> Result<reqwest::Client> {
     use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 
     let mut headers = HeaderMap::new();

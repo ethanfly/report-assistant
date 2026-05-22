@@ -1,13 +1,23 @@
 // 类型定义 - 与 Rust 后端完全对应
 
-export interface LlmConfig {
+export interface LlmProvider {
+  id: string;
+  /** 显示名称；空时回退到 provider+model */
+  name: string;
   provider: string;
   base_url: string;
   api_key: string;
   model: string;
-  vision_model: string;
   temperature: number;
   timeout: number;
+}
+
+export interface LlmConfig {
+  providers: LlmProvider[];
+  /** 默认文本 provider 的 id */
+  default_text_id: string;
+  /** 默认视觉 provider 的 id */
+  default_vision_id: string;
 }
 
 export interface RepoEntry {

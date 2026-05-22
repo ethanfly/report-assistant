@@ -46,8 +46,19 @@ fn default_cleanup_days() -> i64 {
     60
 }
 
+/// 单个 LLM 端点配置。
+///
+/// 一个 provider 对应一条 OpenAI 兼容（或类似协议）的 API 端点 + 模型 + 凭据。
+/// `id` 必须在 `LlmConfig.providers` 内唯一，会被 `default_text_id` /
+/// `default_vision_id` 引用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlmConfig {
+pub struct LlmProvider {
+    #[serde(default)]
+    pub id: String,
+    /// 显示名称（UI 用）；空则前端 fallback 到 `provider + model`。
+    #[serde(default)]
+    pub name: String,
+    /// 协议家族：当前都按 OpenAI 兼容处理；保留字段以便日后区分 anthropic native 等。
     #[serde(default = "default_provider")]
     pub provider: String,
     #[serde(default = "default_base_url")]
@@ -56,26 +67,164 @@ pub struct LlmConfig {
     pub api_key: String,
     #[serde(default = "default_model")]
     pub model: String,
-    /// 用于截图分析的多模态模型；为空则与 `model` 相同。
-    #[serde(default = "default_model")]
-    pub vision_model: String,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
-    /// 单次请求超时（秒）
     #[serde(default = "default_timeout")]
     pub timeout: u64,
 }
 
-impl Default for LlmConfig {
+impl Default for LlmProvider {
     fn default() -> Self {
         Self {
+            id: String::new(),
+            name: String::new(),
             provider: default_provider(),
             base_url: default_base_url(),
             api_key: String::new(),
             model: default_model(),
-            vision_model: default_model(),
             temperature: default_temperature(),
             timeout: default_timeout(),
+        }
+    }
+}
+
+/// 多 provider LLM 配置。
+///
+/// - 自动迁移旧扁平配置（单 provider）：参见 `From<LlmConfigRaw>`
+/// - 默认文本 / 视觉模型通过 id 引用 providers 中的某一条
+/// - 找不到对应 provider 时返回 None，调用方应据此报错
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(from = "LlmConfigRaw")]
+pub struct LlmConfig {
+    #[serde(default)]
+    pub providers: Vec<LlmProvider>,
+    #[serde(default)]
+    pub default_text_id: String,
+    #[serde(default)]
+    pub default_vision_id: String,
+}
+
+impl LlmConfig {
+    /// 解析"默认文本 provider"。无匹配返回 None。
+    pub fn resolve_text(&self) -> Option<&LlmProvider> {
+        if self.default_text_id.trim().is_empty() {
+            return None;
+        }
+        self.providers
+            .iter()
+            .find(|p| p.id == self.default_text_id)
+    }
+
+    /// 解析"默认视觉 provider"。无匹配返回 None。
+    pub fn resolve_vision(&self) -> Option<&LlmProvider> {
+        if self.default_vision_id.trim().is_empty() {
+            return None;
+        }
+        self.providers
+            .iter()
+            .find(|p| p.id == self.default_vision_id)
+    }
+}
+
+/// 反序列化中介：兼容旧扁平结构。
+///
+/// 通过把所有字段都做成 Option，再在 `From` 里根据 `providers` 是否存在
+/// 区分新旧两种 yaml 写法，避免 `#[serde(untagged)]` 在带默认值时的歧义。
+#[derive(Deserialize, Default)]
+struct LlmConfigRaw {
+    // 新结构
+    #[serde(default)]
+    providers: Option<Vec<LlmProvider>>,
+    #[serde(default)]
+    default_text_id: Option<String>,
+    #[serde(default)]
+    default_vision_id: Option<String>,
+
+    // 旧扁平结构（仅在 providers 缺失时启用）
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    base_url: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    vision_model: Option<String>,
+    #[serde(default)]
+    temperature: Option<f32>,
+    #[serde(default)]
+    timeout: Option<u64>,
+}
+
+impl From<LlmConfigRaw> for LlmConfig {
+    fn from(raw: LlmConfigRaw) -> Self {
+        // Case 1: 新结构
+        if let Some(providers) = raw.providers {
+            return LlmConfig {
+                providers,
+                default_text_id: raw.default_text_id.unwrap_or_default(),
+                default_vision_id: raw.default_vision_id.unwrap_or_default(),
+            };
+        }
+
+        // Case 2: 旧扁平结构
+        // 仅当至少有一个旧字段非空时才迁移；都为空（含纯空对象）时返回 default。
+        let has_legacy = raw.provider.is_some()
+            || raw.base_url.is_some()
+            || raw.api_key.is_some()
+            || raw.model.is_some()
+            || raw.vision_model.is_some()
+            || raw.temperature.is_some()
+            || raw.timeout.is_some();
+        if !has_legacy {
+            return LlmConfig::default();
+        }
+
+        let provider_str = raw.provider.unwrap_or_else(default_provider);
+        let base_url = raw.base_url.unwrap_or_else(default_base_url);
+        let api_key = raw.api_key.unwrap_or_default();
+        let model = raw.model.unwrap_or_else(default_model);
+        let vision_model = raw.vision_model.unwrap_or_default();
+        let temperature = raw.temperature.unwrap_or_else(default_temperature);
+        let timeout = raw.timeout.unwrap_or_else(default_timeout);
+
+        let text_id = "legacy".to_string();
+        let mut providers = vec![LlmProvider {
+            id: text_id.clone(),
+            name: "默认".to_string(),
+            provider: provider_str.clone(),
+            base_url: base_url.clone(),
+            api_key: api_key.clone(),
+            model: model.clone(),
+            temperature,
+            timeout,
+        }];
+
+        // 旧的 vision_model 与文本模型不同 → 迁移成独立的 provider。
+        // 否则视觉直接复用文本那条。
+        let trimmed_vision = vision_model.trim();
+        let default_vision_id = if !trimmed_vision.is_empty() && trimmed_vision != model {
+            let vid = "legacy-vision".to_string();
+            providers.push(LlmProvider {
+                id: vid.clone(),
+                name: "默认（视觉）".to_string(),
+                provider: provider_str,
+                base_url,
+                api_key,
+                model: trimmed_vision.to_string(),
+                temperature,
+                timeout,
+            });
+            vid
+        } else {
+            text_id.clone()
+        };
+
+        LlmConfig {
+            providers,
+            default_text_id: text_id,
+            default_vision_id,
         }
     }
 }
@@ -269,17 +418,34 @@ pub fn load() -> Result<Config> {
         return Ok(Config::default());
     }
     let mut cfg: Config = serde_yaml::from_str(&raw)?;
-    // 环境变量覆盖（CI / 临时使用）
-    if let Ok(k) = std::env::var("REPORT_ASSISTANT_API_KEY") {
-        cfg.llm.api_key = k;
-    }
-    if let Ok(b) = std::env::var("REPORT_ASSISTANT_BASE_URL") {
-        cfg.llm.base_url = b;
-    }
-    if let Ok(m) = std::env::var("REPORT_ASSISTANT_MODEL") {
-        cfg.llm.model = m;
-    }
+    // 环境变量覆盖（CI / 临时使用）：仅作用于"默认文本 provider"对应那条。
+    apply_env_overrides(&mut cfg);
     Ok(cfg)
+}
+
+/// 把 REPORT_ASSISTANT_* 环境变量写到默认文本 provider 上。
+/// 找不到时尝试写到 providers[0]；providers 为空则忽略。
+fn apply_env_overrides(cfg: &mut Config) {
+    let key = std::env::var("REPORT_ASSISTANT_API_KEY").ok();
+    let base = std::env::var("REPORT_ASSISTANT_BASE_URL").ok();
+    let model = std::env::var("REPORT_ASSISTANT_MODEL").ok();
+    if key.is_none() && base.is_none() && model.is_none() {
+        return;
+    }
+    let id = cfg.llm.default_text_id.clone();
+    // 先定位 index（不可变借用），再做可变写入；避免 iter_mut + or_else 的二次借用。
+    let idx = cfg
+        .llm
+        .providers
+        .iter()
+        .position(|p| p.id == id)
+        .or(if cfg.llm.providers.is_empty() { None } else { Some(0) });
+    if let Some(i) = idx {
+        let p = &mut cfg.llm.providers[i];
+        if let Some(k) = key { p.api_key = k; }
+        if let Some(b) = base { p.base_url = b; }
+        if let Some(m) = model { p.model = m; }
+    }
 }
 
 /// 持久化到默认路径（覆写）。
@@ -313,8 +479,12 @@ pub fn init_default_if_absent() -> Result<PathBuf> {
 }
 
 /// 帮助调用方判断"配置看起来已就绪"。
+/// 至少需要：默认文本 provider 存在且其 api_key 非空。
 pub fn is_ready(cfg: &Config) -> bool {
-    !cfg.llm.api_key.trim().is_empty()
+    cfg.llm
+        .resolve_text()
+        .map(|p| !p.api_key.trim().is_empty())
+        .unwrap_or(false)
 }
 
 #[allow(dead_code)]

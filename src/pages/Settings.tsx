@@ -34,7 +34,12 @@ import {
   testLlmConnection,
 } from '../api/ipc';
 import { useConfig } from '../hooks/useConfig';
-import type { Config, ReportTemplate, StorageStats } from '../api/types';
+import type {
+  Config,
+  LlmProvider,
+  ReportTemplate,
+  StorageStats,
+} from '../api/types';
 import { useToast } from '../hooks/useToast';
 import dayjs from 'dayjs';
 
@@ -67,6 +72,16 @@ export default function Settings() {
   }, []);
   const [purging, setPurging] = useState(false);
   const [purgeDays, setPurgeDays] = useState(30);
+  // 当前选中编辑的 LLM provider id；默认选中第一个
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('');
+
+  // draft 加载后，若已有 providers 而未选中任何项，自动选第一个
+  useEffect(() => {
+    if (!draft) return;
+    const list = draft.llm.providers ?? [];
+    if (selectedProviderId && list.some((p) => p.id === selectedProviderId)) return;
+    setSelectedProviderId(list[0]?.id ?? '');
+  }, [draft, selectedProviderId]);
 
   useEffect(() => {
     if (config) setDraft(structuredClone(config));
@@ -102,17 +117,120 @@ export default function Settings() {
     }
   };
 
+  // 当前选中的 LLM provider 草稿；用于编辑面板
+  const selectedProvider: LlmProvider | null =
+    draft?.llm.providers.find((p) => p.id === selectedProviderId) ?? null;
+
   const onTest = async () => {
+    if (!selectedProvider) {
+      toast.error('请先选中要测试的 provider');
+      return;
+    }
     if (testing) return;
     setTesting(true);
     try {
-      const [ok, msg] = await testLlmConnection(draft.llm);
+      const [ok, msg] = await testLlmConnection(selectedProvider);
       if (ok) toast.success(`连接成功：${msg || ''}`);
       else toast.error(`连接失败：${msg}`);
     } catch (e: any) {
       toast.error(`测试失败: ${e}`);
     } finally {
       setTesting(false);
+    }
+  };
+
+  /** 生成简单短随机 id，避免依赖 crypto.randomUUID 在低版本 webview 不可用 */
+  const genProviderId = () => 'p-' + Math.random().toString(36).slice(2, 10);
+
+  /** 添加新 provider；template 决定预填字段。返回新 id 以便选中。 */
+  const addProvider = (template: 'openai' | 'claude' | 'custom') => {
+    if (!draft) return;
+    const id = genProviderId();
+    let fresh: LlmProvider;
+    switch (template) {
+      case 'openai':
+        fresh = {
+          id,
+          name: 'OpenAI',
+          provider: 'openai',
+          base_url: 'https://api.openai.com/v1',
+          api_key: '',
+          model: 'gpt-4o-mini',
+          temperature: 0.4,
+          timeout: 60,
+        };
+        break;
+      case 'claude':
+        // Anthropic 官方端点对 OpenAI 兼容协议有自己的网关；
+        // 这里默认填官方 Messages API 路径。如要走 OpenAI 兼容代理可手动改 base_url。
+        fresh = {
+          id,
+          name: 'Claude',
+          provider: 'anthropic',
+          base_url: 'https://api.anthropic.com/v1',
+          api_key: '',
+          model: 'claude-3-5-sonnet-latest',
+          temperature: 0.4,
+          timeout: 60,
+        };
+        break;
+      default:
+        fresh = {
+          id,
+          name: '',
+          provider: 'openai',
+          base_url: '',
+          api_key: '',
+          model: '',
+          temperature: 0.4,
+          timeout: 60,
+        };
+    }
+    const next: Config = {
+      ...draft,
+      llm: {
+        ...draft.llm,
+        providers: [...draft.llm.providers, fresh],
+        // 第一条添加时自动设为默认
+        default_text_id: draft.llm.default_text_id || id,
+        default_vision_id: draft.llm.default_vision_id || id,
+      },
+    };
+    setDraft(next);
+    setSelectedProviderId(id);
+  };
+
+  const updateProvider = (id: string, patch: Partial<LlmProvider>) => {
+    if (!draft) return;
+    const next: Config = {
+      ...draft,
+      llm: {
+        ...draft.llm,
+        providers: draft.llm.providers.map((p) =>
+          p.id === id ? { ...p, ...patch } : p
+        ),
+      },
+    };
+    setDraft(next);
+  };
+
+  const removeProvider = (id: string) => {
+    if (!draft) return;
+    const list = draft.llm.providers.filter((p) => p.id !== id);
+    const next: Config = {
+      ...draft,
+      llm: {
+        ...draft.llm,
+        providers: list,
+        default_text_id:
+          draft.llm.default_text_id === id ? '' : draft.llm.default_text_id,
+        default_vision_id:
+          draft.llm.default_vision_id === id ? '' : draft.llm.default_vision_id,
+      },
+    };
+    setDraft(next);
+    if (selectedProviderId === id) {
+      setSelectedProviderId(list[0]?.id ?? '');
     }
   };
 
@@ -220,81 +338,216 @@ export default function Settings() {
         {tab === 'llm' && (
           <Card
             title="LLM 配置"
-            description="用于生成报告与截图分析的大模型"
+            description="管理多个大模型 provider，可分别指定默认文本模型与视觉模型"
             hoverable={false}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                label="Provider"
-                value={draft.llm.provider}
-                onChange={(e) =>
-                  update('llm', { ...draft.llm, provider: e.target.value })
-                }
-                placeholder="openai / azure / ollama / anthropic..."
-              />
-              <Input
-                label="Base URL"
-                value={draft.llm.base_url}
-                onChange={(e) =>
-                  update('llm', { ...draft.llm, base_url: e.target.value })
-                }
-                placeholder="https://api.openai.com/v1"
-              />
-              <Input
-                label="API Key"
-                type="password"
-                value={draft.llm.api_key}
-                onChange={(e) =>
-                  update('llm', { ...draft.llm, api_key: e.target.value })
-                }
-                placeholder="sk-..."
-              />
-              <Input
-                label="文本模型"
-                value={draft.llm.model}
-                onChange={(e) =>
-                  update('llm', { ...draft.llm, model: e.target.value })
-                }
-                placeholder="gpt-4o-mini"
-              />
-              <Input
-                label="视觉模型"
-                value={draft.llm.vision_model}
-                onChange={(e) =>
-                  update('llm', {
-                    ...draft.llm,
-                    vision_model: e.target.value,
-                  })
-                }
-                placeholder="gpt-4o"
-              />
-              <Input
-                label="Temperature"
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                value={draft.llm.temperature}
-                onChange={(e) =>
-                  update('llm', {
-                    ...draft.llm,
-                    temperature: Number(e.target.value),
-                  })
-                }
-              />
-              <Input
-                label="超时（秒）"
-                type="number"
-                min="1"
-                value={draft.llm.timeout}
-                onChange={(e) =>
-                  update('llm', {
-                    ...draft.llm,
-                    timeout: Number(e.target.value),
-                  })
-                }
-              />
+            {/* 顶部：添加按钮 */}
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-ink">Providers</label>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Plus size={14} />}
+                  onClick={() => addProvider('openai')}
+                >
+                  添加 OpenAI
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Plus size={14} />}
+                  onClick={() => addProvider('claude')}
+                >
+                  添加 Claude
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Plus size={14} />}
+                  onClick={() => addProvider('custom')}
+                >
+                  自定义
+                </Button>
+              </div>
             </div>
+
+            {/* providers 列表 */}
+            <div className="border border-border rounded-md divide-y divide-border bg-card mb-4">
+              {draft.llm.providers.length === 0 ? (
+                <div className="px-3 py-6 text-sm text-ink2 text-center">
+                  尚未添加任何 provider。点击右上方按钮选择模板新建一个。
+                </div>
+              ) : (
+                draft.llm.providers.map((p) => {
+                  const isSelected = p.id === selectedProviderId;
+                  const isText = p.id === draft.llm.default_text_id;
+                  const isVision = p.id === draft.llm.default_vision_id;
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedProviderId(p.id)}
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer group ${
+                        isSelected ? 'bg-primary-50' : 'hover:bg-bg'
+                      }`}
+                    >
+                      <Cpu
+                        size={14}
+                        className={
+                          isSelected ? 'text-primary-700' : 'text-ink2'
+                        }
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-ink truncate">
+                          {p.name?.trim()
+                            ? p.name
+                            : `${p.provider || '未命名'} · ${p.model || '未填模型'}`}
+                        </div>
+                        <div className="text-[11px] text-ink2 truncate">
+                          {p.provider} · {p.model || '未填模型'} · {p.base_url || '未填 base_url'}
+                        </div>
+                      </div>
+                      {isText && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700">
+                          文本默认
+                        </span>
+                      )}
+                      {isVision && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-100 text-accent-700">
+                          视觉默认
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeProvider(p.id);
+                        }}
+                        className="text-ink2 hover:text-red-500 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label="移除"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 编辑面板 */}
+            {selectedProvider ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  label="显示名称"
+                  value={selectedProvider.name}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, { name: e.target.value })
+                  }
+                  placeholder="用于在列表中识别这条 provider"
+                />
+                <Input
+                  label="Provider"
+                  value={selectedProvider.provider}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      provider: e.target.value,
+                    })
+                  }
+                  placeholder="openai / azure / ollama / anthropic..."
+                />
+                <Input
+                  label="Base URL"
+                  value={selectedProvider.base_url}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      base_url: e.target.value,
+                    })
+                  }
+                  placeholder="https://api.openai.com/v1"
+                />
+                <Input
+                  label="API Key"
+                  type="password"
+                  value={selectedProvider.api_key}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      api_key: e.target.value,
+                    })
+                  }
+                  placeholder="sk-..."
+                />
+                <Input
+                  label="模型"
+                  value={selectedProvider.model}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      model: e.target.value,
+                    })
+                  }
+                  placeholder="gpt-4o-mini / claude-3-5-sonnet-latest"
+                />
+                <Input
+                  label="Temperature"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="2"
+                  value={selectedProvider.temperature}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      temperature: Number(e.target.value),
+                    })
+                  }
+                />
+                <Input
+                  label="超时（秒）"
+                  type="number"
+                  min="1"
+                  value={selectedProvider.timeout}
+                  onChange={(e) =>
+                    updateProvider(selectedProvider.id, {
+                      timeout: Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+            ) : null}
+
+            {/* 默认选择 + 测试按钮 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Select
+                label="默认文本模型"
+                value={draft.llm.default_text_id}
+                onChange={(e) =>
+                  update('llm', { ...draft.llm, default_text_id: e.target.value })
+                }
+              >
+                <option value="">— 未指定 —</option>
+                {draft.llm.providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name?.trim() ? p.name : `${p.provider} · ${p.model}`}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="默认视觉模型"
+                value={draft.llm.default_vision_id}
+                onChange={(e) =>
+                  update('llm', {
+                    ...draft.llm,
+                    default_vision_id: e.target.value,
+                  })
+                }
+              >
+                <option value="">— 未指定 —</option>
+                {draft.llm.providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name?.trim() ? p.name : `${p.provider} · ${p.model}`}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             <div className="mt-3">
               <Button
                 variant="secondary"
@@ -302,8 +555,9 @@ export default function Settings() {
                 icon={<Plug size={14} />}
                 onClick={() => void onTest()}
                 loading={testing}
+                disabled={!selectedProvider}
               >
-                测试连接
+                测试当前 provider
               </Button>
             </div>
           </Card>

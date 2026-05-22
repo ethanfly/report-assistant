@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Local};
 use report_assistant_core::{
-    config::{self, Config, LlmConfig},
+    config::{self, Config, LlmProvider},
     exporters::{self, ExportFormat},
     generator::{self, GenerateRequest, GenerateResult},
     llm::{self, LlmClient},
@@ -158,12 +158,19 @@ pub async fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
 /// 触发一次"截图 + 视觉分析 + 入库"，返回新建的 WorkLog。
 #[tauri::command]
 pub async fn capture_once(state: State<'_, AppStateHandle>) -> Result<WorkLog, String> {
-    // 1) 拷贝所需配置
-    let (llm_cfg, screenshot_dir, monitor_index, keep) = {
+    // 1) 拷贝所需配置（视觉 provider 必须配齐）
+    let (vision_provider, screenshot_dir, monitor_index, keep) = {
         let cfg = state.config.lock();
         let dir = cfg.resolved_screenshot_dir().map_err(|e| e.to_string())?;
+        let provider = cfg
+            .llm
+            .resolve_vision()
+            .ok_or_else(|| {
+                "未配置默认视觉模型，请先在设置 → LLM 中添加并指定一个视觉 provider".to_string()
+            })?
+            .clone();
         (
-            cfg.llm.clone(),
+            provider,
             dir,
             cfg.screenshot.monitor_index,
             cfg.screenshot.keep_after_analysis,
@@ -171,7 +178,7 @@ pub async fn capture_once(state: State<'_, AppStateHandle>) -> Result<WorkLog, S
     };
 
     // 2) 构造 LLM 客户端
-    let llm = LlmClient::new(llm_cfg).map_err(|e| e.to_string())?;
+    let llm = LlmClient::new(vision_provider).map_err(|e| e.to_string())?;
 
     // 3) 截图（阻塞）
     let dir_for_blk = screenshot_dir.clone();
@@ -389,7 +396,14 @@ pub async fn generate_report(
 ) -> Result<GenerateResult, String> {
     let cfg = state.config.lock().clone();
     let storage = state.storage.clone();
-    let llm = LlmClient::new(cfg.llm.clone()).map_err(|e| e.to_string())?;
+    let text_provider = cfg
+        .llm
+        .resolve_text()
+        .ok_or_else(|| {
+            "未配置默认文本模型，请先在设置 → LLM 中添加并指定一个文本 provider".to_string()
+        })?
+        .clone();
+    let llm = LlmClient::new(text_provider).map_err(|e| e.to_string())?;
 
     generator::generate_report(&cfg, &storage, &llm, request)
         .await
@@ -437,8 +451,8 @@ pub async fn export_report(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn test_llm_connection(cfg: LlmConfig) -> Result<(bool, String), String> {
-    Ok(llm::check_connection(&cfg).await)
+pub async fn test_llm_connection(provider: LlmProvider) -> Result<(bool, String), String> {
+    Ok(llm::check_connection(&provider).await)
 }
 
 // ---------------------------------------------------------------------------
