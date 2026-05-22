@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+      'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d4d4d8;
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a1a1aa;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-card shadow-card border border-border p-5;
+  }
+
+  .input-base {
+    @apply block w-full rounded-md border border-border bg-white px-3 py-2 text-sm text-ink
+           placeholder:text-muted/70 focus:border-primary focus:outline-none focus:ring-2
+           focus:ring-primary/20 disabled:bg-zinc-50 disabled:text-muted;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm
+           font-medium transition disabled:opacity-50 disabled:cursor-not-allowed
+           select-none;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary-600 active:bg-primary-700
+           shadow-sm;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink border border-border hover:bg-zinc-50;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink hover:bg-zinc-100;
+  }
+  .btn-danger {
+    @apply btn bg-red-500 text-white hover:bg-red-600;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-ink mb-1.5;
+  }
+
+  .hint {
+    @apply text-xs text-muted mt-1;
+  }
+
+  .markdown-body {
+    @apply text-sm leading-relaxed text-ink;
+  }
+  .markdown-body h1 {
+    @apply text-xl font-semibold mt-4 mb-2;
+  }
+  .markdown-body h2 {
+    @apply text-lg font-semibold mt-4 mb-2;
+  }
+  .markdown-body h3 {
+    @apply text-base font-semibold mt-3 mb-1.5;
+  }
+  .markdown-body p {
+    @apply my-2;
+  }
+  .markdown-body ul {
+    @apply list-disc pl-6 my-2;
+  }
+  .markdown-body ol {
+    @apply list-decimal pl-6 my-2;
+  }
+  .markdown-body li {
+    @apply my-0.5;
+  }
+  .markdown-body code {
+    @apply bg-zinc-100 px-1.5 py-0.5 rounded text-[0.85em] font-mono;
+  }
+  .markdown-body pre {
+    @apply bg-zinc-900 text-zinc-100 p-3 rounded-md overflow-auto my-3;
+  }
+  .markdown-body pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+  .markdown-body blockquote {
+    @apply border-l-4 border-primary-200 pl-3 italic text-muted my-2;
+  }
+  .markdown-body table {
+    @apply border-collapse my-3 text-sm;
+  }
+  .markdown-body th,
+  .markdown-body td {
+    @apply border border-border px-2 py-1;
+  }
+  .markdown-body th {
+    @apply bg-zinc-50 font-medium;
+  }
+  .markdown-body a {
+    @apply text-primary underline-offset-2 hover:underline;
+  }
+  .markdown-body hr {
+    @apply my-4 border-border;
+  }
+}
+
+/* Toast */
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  min-width: 240px;
+  max-width: 360px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #1f1f2e;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  animation: toast-in 0.18s ease-out;
+}
+.toast-info {
+  border-left: 3px solid #8b5cf6;
+}
+.toast-success {
+  border-left: 3px solid #10b981;
+}
+.toast-error {
+  border-left: 3px solid #ef4444;
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

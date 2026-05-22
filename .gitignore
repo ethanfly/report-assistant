@@ -1,24 +1,17 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-*.egg
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.venv/
-venv/
-env/
-build/
-dist/
-.eggs/
+# Rust
+target/
+Cargo.lock.bak
 
-# Project
-data/
-*.sqlite
-*.sqlite-journal
-.report-assistant/
+# Node / Vite
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
 
 # IDE
 .idea/
@@ -26,9 +19,14 @@ data/
 *.swp
 .DS_Store
 
-# Local
+# Project local
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.report-assistant/
+
+# Local config
 *.local.yml
 report-assistant.yml
-
-# PyInstaller
-*.spec

@@ -13,92 +13,102 @@ permissions:
   contents: write
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install
-        run: |
-          pip install -e ".[dev]"
-      - name: Run tests
-        run: pytest -q
-
   build:
-    name: Build (${{ matrix.os }})
-    needs: test
+    name: Build (${{ matrix.platform.os }})
     strategy:
       fail-fast: false
       matrix:
-        include:
+        platform:
           - os: windows-latest
-            asset_name: report-assistant-${{ github.run_number }}-windows-x64.zip
+            asset_name: report-assistant-${{ github.run_number }}-windows-x64
+            tauri_target: x86_64-pc-windows-msvc
           - os: macos-latest
-            asset_name: report-assistant-${{ github.run_number }}-macos.zip
-          - os: ubuntu-latest
-            asset_name: report-assistant-${{ github.run_number }}-linux-x64.zip
+            asset_name: report-assistant-${{ github.run_number }}-macos-aarch64
+            tauri_target: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            asset_name: report-assistant-${{ github.run_number }}-linux-x64
+            tauri_target: x86_64-unknown-linux-gnu
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform.os }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux deps
+        if: matrix.platform.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: 22
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[gui]"
-          pip install pyinstaller
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
 
-      - name: Generate icon assets
-        run: |
-          python -m report_assistant.desktop.assets.generate_logo
-          python -m report_assistant.desktop.assets.generate_arrows
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
 
-      # 统一用项目里的 spec 文件构建（onedir 模式 + 无 UPX），
-      # 启动几乎瞬开，避免 onefile 的 75MB 解压卡顿。
-      - name: Build (Windows)
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build CLI
+        shell: bash
+        run: cargo build --release -p report-assistant-cli
+
+      - name: Build Tauri
+        shell: bash
+        working-directory: src-tauri
+        run: cargo build --release
+
+      - name: Package artifacts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          pyinstaller --noconfirm report-assistant.spec
-          Compress-Archive -Path dist\report-assistant\* -DestinationPath "dist\${{ matrix.asset_name }}"
+          New-Item -ItemType Directory -Path "artifacts/${{ matrix.platform.asset_name }}" -Force | Out-Null
+          Copy-Item "src-tauri/target/release/report-assistant.exe" "artifacts/${{ matrix.platform.asset_name }}/小T日报助手.exe"
+          Copy-Item "target/release/report-assistant.exe" "artifacts/${{ matrix.platform.asset_name }}/report-assistant-cli.exe"
+          Compress-Archive -Path "artifacts/${{ matrix.platform.asset_name }}/*" -DestinationPath "artifacts/${{ matrix.platform.asset_name }}.zip"
 
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
+      - name: Package artifacts (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
-          pyinstaller --noconfirm report-assistant.spec
-          cd dist
-          if [ -d "report-assistant.app" ]; then
-            zip -r "${{ matrix.asset_name }}" "report-assistant.app"
-          else
-            zip -r "${{ matrix.asset_name }}" "report-assistant"
-          fi
-
-      - name: Build (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
-          pyinstaller --noconfirm report-assistant.spec
-          cd dist
-          zip -r "${{ matrix.asset_name }}" "report-assistant"
+          mkdir -p "artifacts/${{ matrix.platform.asset_name }}"
+          cp src-tauri/target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}/" || true
+          cp target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}/report-assistant-cli" || true
+          cd artifacts && zip -r "${{ matrix.platform.asset_name }}.zip" "${{ matrix.platform.asset_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: dist/${{ matrix.asset_name }}
+          name: ${{ matrix.platform.asset_name }}
+          path: artifacts/${{ matrix.platform.asset_name }}.zip
           if-no-files-found: error
 
   release:
@@ -115,10 +125,9 @@ jobs:
         id: ver
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-          VERSION="v0.1.${{ github.run_number }}"
+          VERSION="v0.2.${{ github.run_number }}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Version: ${VERSION} (${SHORT_SHA})"
 
       - name: Generate changelog
         id: changelog
@@ -157,12 +166,13 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
 
             ## 下载
-            解压 zip 后双击 `report-assistant.exe`（Windows）或对应可执行文件运行。
+            解压 zip 后双击 `小T日报助手.exe`（Windows）或对应可执行文件运行；
+            随包附带 `report-assistant-cli` 命令行工具。
 
             - **Windows**：`*-windows-x64.zip`
-            - **macOS**：`*-macos.zip`
+            - **macOS**：`*-macos-aarch64.zip`
             - **Linux**：`*-linux-x64.zip`
-          files: artifacts/*
+          files: artifacts/*.zip
           draft: false
           prerelease: false
           generate_release_notes: false

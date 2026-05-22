@@ -1,0 +1,37 @@
+# 小T日报助手 配置文件
+llm:
+  provider: openai
+  base_url: https://api.openai.com/v1
+  api_key: ""
+  model: gpt-4o-mini
+  vision_model: gpt-4o-mini
+  temperature: 0.4
+  timeout: 60
+
+git:
+  repos: []
+  author_emails: []
+  author_names: []
+  include_merges: false
+  poll_interval_seconds: 600
+
+screenshot:
+  enabled: true
+  interval_seconds: 600
+  keep_after_analysis: false
+  output_dir: ""
+  auto_start: false
+  monitor_index: 1
+  idle_skip_seconds: 300
+
+report:
+  default_template: standard
+  language: zh-CN
+  user_name: ""
+  team: ""
+
+app:
+  auto_launch_on_boot: false
+  cleanup_keep_days: 60
+
+db_path: ""
