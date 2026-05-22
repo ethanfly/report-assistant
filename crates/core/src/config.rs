@@ -80,10 +80,60 @@ impl Default for LlmConfig {
     }
 }
 
+/// 一个 Git 仓库条目：路径 + 可选别名。
+///
+/// 序列化形式：
+/// - 新格式：`{ path: "/foo", alias: "前端" }`
+/// - 旧格式：纯字符串 `"/foo"`，由 `Deserialize` 自动兼容
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "RepoEntryRaw")]
+pub struct RepoEntry {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub alias: String,
+}
+
+impl RepoEntry {
+    /// 仓库展示名：优先 alias，没有就用 path 末段。
+    pub fn display_name(&self) -> String {
+        let trimmed = self.alias.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+        std::path::Path::new(&self.path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.path.clone())
+    }
+}
+
+/// 反序列化中介：兼容字符串与对象两种写法。
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RepoEntryRaw {
+    /// 旧格式：直接是字符串路径
+    Path(String),
+    /// 新格式：`{ path, alias? }`
+    Full {
+        path: String,
+        #[serde(default)]
+        alias: String,
+    },
+}
+
+impl From<RepoEntryRaw> for RepoEntry {
+    fn from(raw: RepoEntryRaw) -> Self {
+        match raw {
+            RepoEntryRaw::Path(p) => RepoEntry { path: p, alias: String::new() },
+            RepoEntryRaw::Full { path, alias } => RepoEntry { path, alias },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GitConfig {
     #[serde(default)]
-    pub repos: Vec<String>,
+    pub repos: Vec<RepoEntry>,
     #[serde(default)]
     pub author_emails: Vec<String>,
     #[serde(default)]

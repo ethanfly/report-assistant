@@ -10,8 +10,14 @@ export interface LlmConfig {
   timeout: number;
 }
 
+export interface RepoEntry {
+  path: string;
+  /** 显示名称；为空则使用路径末段 */
+  alias?: string;
+}
+
 export interface GitConfig {
-  repos: string[];
+  repos: RepoEntry[];
   author_emails: string[];
   author_names: string[];
   include_merges: boolean;

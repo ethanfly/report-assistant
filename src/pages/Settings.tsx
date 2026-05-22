@@ -171,8 +171,12 @@ export default function Settings() {
       });
       if (!picked) return;
       const list = Array.isArray(picked) ? picked : [picked];
-      const next = Array.from(new Set([...draft.git.repos, ...list]));
-      update('git', { ...draft.git, repos: next });
+      const existing = new Set(draft.git.repos.map((r) => r.path));
+      const additions = list
+        .filter((p) => !existing.has(p))
+        .map((p) => ({ path: p, alias: '' }));
+      if (additions.length === 0) return;
+      update('git', { ...draft.git, repos: [...draft.git.repos, ...additions] });
     } catch (e: any) {
       toast.error(`选择目录失败: ${e}`);
     }
@@ -326,19 +330,60 @@ export default function Settings() {
                     浏览并添加...
                   </Button>
                 </div>
-                <ListBox
-                  empty="尚未添加任何仓库，点击上方按钮添加。"
-                  items={draft.git.repos}
-                  renderIcon={() => (
-                    <FolderGit2 size={14} className="text-primary shrink-0" />
+                <div className="border border-border rounded-md divide-y divide-border bg-card">
+                  {draft.git.repos.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-ink2 text-center">
+                      尚未添加任何仓库，点击上方按钮添加。
+                    </div>
+                  ) : (
+                    draft.git.repos.map((repo, i) => (
+                      <div
+                        key={`${repo.path}-${i}`}
+                        className="flex items-center gap-2 px-3 py-2 hover:bg-bg group"
+                      >
+                        <FolderGit2
+                          size={14}
+                          className="text-primary shrink-0"
+                        />
+                        <span
+                          className="text-sm text-ink truncate flex-1 min-w-0"
+                          title={repo.path}
+                        >
+                          {repo.path}
+                        </span>
+                        <input
+                          type="text"
+                          value={repo.alias ?? ''}
+                          placeholder="显示名称（可选）"
+                          className="w-40 h-7 px-2 text-xs rounded border border-border bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                          onChange={(e) => {
+                            const next = draft.git.repos.map((r, idx) =>
+                              idx === i
+                                ? { ...r, alias: e.target.value }
+                                : r
+                            );
+                            update('git', { ...draft.git, repos: next });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            update('git', {
+                              ...draft.git,
+                              repos: draft.git.repos.filter(
+                                (_, idx) => idx !== i
+                              ),
+                            })
+                          }
+                          className="text-ink2 hover:text-red-500 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="移除"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))
                   )}
-                  onRemove={(i) =>
-                    update('git', {
-                      ...draft.git,
-                      repos: draft.git.repos.filter((_, idx) => idx !== i),
-                    })
-                  }
-                />
+                </div>
               </div>
 
               {/* 作者邮箱白名单 */}

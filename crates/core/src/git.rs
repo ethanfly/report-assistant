@@ -46,8 +46,10 @@ pub fn is_git_repo(path: impl AsRef<Path>) -> bool {
 /// 收集单个仓库在 [since, until] 时间范围内的所有提交。
 ///
 /// 不做作者过滤，调用方按需要再过滤。返回顺序：提交时间倒序。
+/// `display_name` 为空时回退到路径末段。
 pub fn collect_commits(
     repo_path: impl AsRef<Path>,
+    display_name: Option<&str>,
     since: DateTime<Local>,
     until: DateTime<Local>,
 ) -> Result<Vec<Commit>> {
@@ -55,10 +57,15 @@ pub fn collect_commits(
     let repo = git2::Repository::open(path)?;
 
     let repo_str = path.to_string_lossy().to_string();
-    let repo_name = path
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| repo_str.clone());
+    let repo_name = display_name
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| repo_str.clone())
+        });
 
     let mut walk = repo.revwalk()?;
     // HEAD 起步；若仓库尚无任何提交，直接返回空
@@ -149,7 +156,7 @@ pub fn collect_for_user(
 
     let mut all: Vec<Commit> = Vec::new();
     for repo in &cfg.repos {
-        let trimmed = repo.trim();
+        let trimmed = repo.path.trim();
         if trimmed.is_empty() {
             continue;
         }
@@ -157,7 +164,9 @@ pub fn collect_for_user(
             tracing::warn!(repo = %trimmed, "跳过非 git 仓库");
             continue;
         }
-        match collect_commits(trimmed, since, until) {
+        let alias = repo.alias.trim();
+        let display = if alias.is_empty() { None } else { Some(alias) };
+        match collect_commits(trimmed, display, since, until) {
             Ok(list) => {
                 for c in list {
                     if !cfg.include_merges && c.is_merge {
