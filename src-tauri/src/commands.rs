@@ -308,23 +308,34 @@ pub async fn is_watching(state: State<'_, AppStateHandle>) -> Result<bool, Strin
 // Git
 // ---------------------------------------------------------------------------
 
-/// 拉取最近一段时间的 Git 提交并入库（dedupe），返回本次 commits 总条数。
+/// 全量覆盖式同步：先清空所有 `source = "git"` 的 work_log，
+/// 再重新采集时间窗口内的提交并写入。返回本次写入的 commit 条数。
 ///
 /// 时间窗口对齐自动清理保留天数 `cfg.app.cleanup_keep_days`：
 /// 自动清理会删 N 天前的所有记录，再去同步更老的提交毫无意义；
 /// `<= 0` 表示不限制（保底兜到 365 天，避免全仓库扫描过慢）。
+///
+/// 注意：此操作会丢弃数据库里所有 git 来源的旧记录（包括窗口外的），
+/// 调用方应在 UI 上做相应提示。
 #[tauri::command]
 pub async fn sync_git(state: State<'_, AppStateHandle>) -> Result<usize, String> {
     let cfg = state.config.lock().clone();
     let storage = state.storage.clone();
-    // git 收集是同步阻塞操作，扔到 blocking thread 上执行。
     let kind = templates::Kind::Daily;
     let count = tokio::task::spawn_blocking(move || {
+        // 1. 清空旧的 git 记录。失败时直接抛错，避免落入"删一半再写一半"的状态。
+        let purged = storage.delete_work_logs_by_source("git")?;
+        tracing::info!(purged, "已清空旧的 git work_logs，准备重新导入");
+
+        // 2. 重新采集时间窗口内的所有 commit。
         let keep_days = cfg.app.cleanup_keep_days;
         let span_days = if keep_days > 0 { keep_days } else { 365 };
         let since = Local::now() - chrono::Duration::days(span_days);
         let until = Local::now();
         let commits = report_assistant_core::git::collect_for_user(&cfg.git, since, until)?;
+
+        // 3. 全量写回。dedupe_key 仍保留，后续若有非覆盖路径调用也能复用。
+        let mut written = 0usize;
         for c in &commits {
             let title = if c.subject.is_empty() {
                 c.message.lines().next().unwrap_or("").to_string()
@@ -341,19 +352,24 @@ pub async fn sync_git(state: State<'_, AppStateHandle>) -> Result<usize, String>
                 "repo_name": c.repo_name,
                 "is_merge": c.is_merge,
             });
-            let _ = storage.add_work_log(
-                c.time,
-                "git",
-                &title,
-                &c.message,
-                Some("commit"),
-                meta,
-                Some(&c.hash),
-            );
+            if storage
+                .add_work_log(
+                    c.time,
+                    "git",
+                    &title,
+                    &c.message,
+                    Some("commit"),
+                    meta,
+                    Some(&c.hash),
+                )
+                .is_ok()
+            {
+                written += 1;
+            }
         }
-        // kind 引入避免编译器警告并保持兼容（未来可换 collect_data）。
         let _ = kind;
-        Ok::<usize, report_assistant_core::Error>(commits.len())
+        tracing::info!(written, total = commits.len(), "git 全量覆盖同步完成");
+        Ok::<usize, report_assistant_core::Error>(written)
     })
     .await
     .map_err(|e| e.to_string())?

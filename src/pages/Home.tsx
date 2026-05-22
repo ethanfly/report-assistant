@@ -170,7 +170,7 @@ export default function Home() {
     withBusy('git', async () => {
       try {
         const n = await syncGit();
-        toast.success(`同步 Git 完成，新增 ${n} 条提交`);
+        toast.success(`Git 全量覆盖同步完成，已导入 ${n} 条提交`);
         await refreshLogs();
       } catch (e: any) {
         toast.error(`Git 同步失败: ${e}`);

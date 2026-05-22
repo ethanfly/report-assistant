@@ -263,6 +263,17 @@ impl Storage {
         Ok(n > 0)
     }
 
+    /// 按 source 删除所有 work_log，返回删除条数。
+    /// 用于"全量覆盖"式的同步：先清空指定来源，再重新导入。
+    pub fn delete_work_logs_by_source(&self, source: &str) -> Result<u64> {
+        let conn = self.pool.get()?;
+        let n = conn.execute(
+            "DELETE FROM work_logs WHERE source = ?1",
+            params![source],
+        )?;
+        Ok(n as u64)
+    }
+
     // -------------------- reports --------------------
 
     /// 写入一篇报告，返回新 id。
