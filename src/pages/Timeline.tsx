@@ -8,12 +8,15 @@ import {
   FileText,
   Trash2,
   RefreshCw,
+  Plus,
+  X,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { Select } from '../components/Input';
+import { Select, Textarea } from '../components/Input';
 import DatePicker from '../components/DatePicker';
-import { deleteWorkLog, listWorkLogs } from '../api/ipc';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { addManualLog, deleteWorkLog, listWorkLogs } from '../api/ipc';
 import type { WorkLog } from '../api/types';
 import { useToast } from '../hooks/useToast';
 import clsx from 'clsx';
@@ -27,6 +30,11 @@ export default function Timeline() {
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  // 手动添加表单：modal 开关 + 草稿
+  const [showAdd, setShowAdd] = useState(false);
+  const [draftDesc, setDraftDesc] = useState('');
+  const [draftTime, setDraftTime] = useState(''); // HH:mm，空 = 现在
+  const [adding, setAdding] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -78,26 +86,132 @@ export default function Timeline() {
     }
   };
 
+  const openAdd = () => {
+    setDraftDesc('');
+    setDraftTime(dayjs().format('HH:mm'));
+    setShowAdd(true);
+  };
+
+  const onSubmitAdd = async () => {
+    const desc = draftDesc.trim();
+    if (!desc) {
+      toast.alert('请先填写工作描述', { kind: 'warning', title: '内容为空' });
+      return;
+    }
+    if (adding) return;
+
+    // 把当前选中日期 + 用户输入的 HH:mm 拼成 ISO 时间戳；时间空则用当下
+    const iso = (() => {
+      const t = draftTime.trim();
+      if (!t) return undefined;
+      const m = /^(\d{1,2}):(\d{1,2})$/.exec(t);
+      if (!m) return null; // 标记格式错
+      const hh = Number(m[1]);
+      const mm = Number(m[2]);
+      if (hh > 23 || mm > 59) return null;
+      return dayjs(date)
+        .hour(hh)
+        .minute(mm)
+        .second(0)
+        .millisecond(0)
+        .toISOString();
+    })();
+
+    if (iso === null) {
+      toast.alert('时间格式应为 HH:mm，例如 14:30', {
+        kind: 'warning',
+        title: '时间无效',
+      });
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const log = await addManualLog(desc, iso);
+      setShowAdd(false);
+      await refresh();
+      toast.alert(
+        [
+          '已保存到时间线，已自动完成扩写与分类。',
+          '',
+          `分类：${log.category ?? '其他'}`,
+          `标题：${log.title}`,
+          '',
+          '后续流程：',
+          '1) 这条记录会与截图、Git 提交一起进入当天的工作日志',
+          '2) 生成日报/周报/月报时会自动汇总进去',
+          '3) 不满意可在时间线 hover 该条 → 点垃圾桶删除',
+        ].join('\n'),
+        {
+          kind: 'success',
+          title: '记录已添加',
+          okLabel: '知道了',
+        }
+      );
+    } catch (e: any) {
+      const raw =
+        typeof e === 'string'
+          ? e
+          : (e?.message as string | undefined) ?? String(e);
+      const isTimeout = /timeout|timed out|超时/i.test(raw);
+      toast.alert(
+        isTimeout
+          ? '响应超时：模型未在配置的超时时间内返回。建议增大设置 → LLM 的超时秒数，或换一个更快的文本模型。'
+          : raw,
+        { title: isTimeout ? '响应超时' : '添加失败', kind: 'error' }
+      );
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const shiftDay = (delta: number) => {
     setDate(dayjs(date).add(delta, 'day').format('YYYY-MM-DD'));
   };
 
   return (
     <div className="p-6 space-y-5">
+      <LoadingOverlay
+        open={adding}
+        title="正在保存并扩写..."
+        description="模型正在丰富你输入的工作描述，并自动归类。"
+      />
+      {showAdd && (
+        <AddManualModal
+          desc={draftDesc}
+          time={draftTime}
+          dateLabel={date}
+          submitting={adding}
+          onDescChange={setDraftDesc}
+          onTimeChange={setDraftTime}
+          onClose={() => !adding && setShowAdd(false)}
+          onSubmit={() => void onSubmitAdd()}
+        />
+      )}
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-ink text-pix">时间线</h1>
           <p className="text-sm text-ink2 mt-1">查看指定日期的工作流水</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<RefreshCw size={14} />}
-          onClick={() => void refresh()}
-          loading={loading}
-        >
-          刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus size={14} />}
+            onClick={openAdd}
+          >
+            添加记录
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<RefreshCw size={14} />}
+            onClick={() => void refresh()}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </div>
       </header>
 
       <Card hoverable={false}>
@@ -252,5 +366,102 @@ function SourceIcon({ source }: { source: string }) {
     <span className="w-7 h-7 rounded-pix bg-accent-50 text-accent-600 flex items-center justify-center border border-accent-100">
       <FileText size={14} />
     </span>
+  );
+}
+
+/**
+ * 手动添加记录的模态框：让用户填一段简短描述 + 时间。
+ * 关闭走外部传入的 onClose（提交中时禁用关闭）。
+ */
+function AddManualModal({
+  desc,
+  time,
+  dateLabel,
+  submitting,
+  onDescChange,
+  onTimeChange,
+  onClose,
+  onSubmit,
+}: {
+  desc: string;
+  time: string;
+  dateLabel: string;
+  submitting: boolean;
+  onDescChange: (v: string) => void;
+  onTimeChange: (v: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="max-w-lg w-[90%] bg-card border border-border rounded-lg shadow-lg"
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <div className="text-sm font-semibold text-ink">添加工作记录</div>
+          <button
+            type="button"
+            className="text-ink2 hover:text-ink disabled:opacity-50"
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="关闭"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <Textarea
+            label="工作描述"
+            value={desc}
+            onChange={(e) => onDescChange(e.target.value)}
+            rows={4}
+            placeholder="例如：跟产品对齐了下周的迭代范围，确认两个新需求的边界"
+            hint="保存后会调用文本模型扩写并自动分类，不要写敏感的人名/项目代号"
+            disabled={submitting}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="w-full">
+              <label className="label">日期</label>
+              <div className="input-base flex items-center text-ink2 cursor-not-allowed select-none">
+                {dateLabel}
+              </div>
+              <p className="hint">沿用页面顶部选中的日期</p>
+            </div>
+            <div className="w-full">
+              <label className="label">时间（HH:mm）</label>
+              <input
+                type="text"
+                value={time}
+                onChange={(e) => onTimeChange(e.target.value)}
+                placeholder="例如 14:30"
+                disabled={submitting}
+                className="input-base"
+              />
+              <p className="hint">留空则使用当前时间</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onSubmit}
+            loading={submitting}
+          >
+            保存并扩写
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

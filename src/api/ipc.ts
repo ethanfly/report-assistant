@@ -56,6 +56,10 @@ export const isWatching = () => invoke<boolean>('is_watching');
 // ===== Git =====
 export const syncGit = () => invoke<number>('sync_git');
 
+// ===== 时间线手动记录 =====
+export const addManualLog = (description: string, ts?: string) =>
+  invoke<WorkLog>('add_manual_log', { description, ts });
+
 // ===== 报告 =====
 export const generateReport = (request: GenerateRequest) =>
   invoke<GenerateResult>('generate_report', { request });

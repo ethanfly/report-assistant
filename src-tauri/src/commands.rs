@@ -444,6 +444,92 @@ impl Drop for WatchPauseGuard {
     }
 }
 
+/// 用户在时间线手动添加一条工作描述，后端用文本模型扩写并自动归类。
+#[tauri::command]
+pub async fn add_manual_log(
+    state: State<'_, AppStateHandle>,
+    description: String,
+    ts: Option<String>,
+) -> Result<WorkLog, String> {
+    let trimmed = description.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("工作描述不能为空".to_string());
+    }
+
+    let event_time: DateTime<Local> = match ts.as_deref() {
+        Some(s) if !s.trim().is_empty() => DateTime::parse_from_rfc3339(s)
+            .map(|d| d.with_timezone(&Local))
+            .map_err(|e| format!("时间格式无效：{}", e))?,
+        _ => Local::now(),
+    };
+
+    let cfg = state.config.lock().clone();
+    let storage = state.storage.clone();
+    let text_provider = cfg
+        .llm
+        .resolve_text()
+        .ok_or_else(|| {
+            "未配置默认文本模型，请先在设置 → LLM 中添加并指定一个文本 provider".to_string()
+        })?
+        .clone();
+    let llm = LlmClient::new(text_provider).map_err(|e| e.to_string())?;
+
+    // 期间暂停 watch，避免双 LLM 并发
+    let _watch_guard = WatchPauseGuard::new(state.watch.lock().clone());
+
+    let user_msg = format!(
+        "请把下面的工作描述扩写成一条结构化的工作日志，并判断分类。\n\n原始描述：{}\n\n请用 JSON 格式返回，且仅返回 JSON，不要 markdown 代码块：\n{{\n  \"category\": \"开发|会议|沟通|文档|学习|设计|测试|其他\",\n  \"title\": \"一句话概括（10-20 字）\",\n  \"summary\": \"2-4 句话扩写（保留用户原意，可补充常见上下文，不要编造具体的人名/项目名/数字）\",\n  \"keywords\": [\"关键词1\", \"关键词2\"]\n}}",
+        trimmed
+    );
+    let messages = vec![
+        llm::ChatMessage::text(
+            "system",
+            "你是工作日志整理助手。严格按要求返回 JSON。",
+        ),
+        llm::ChatMessage::text("user", user_msg),
+    ];
+    let raw = llm
+        .chat(messages, None, None)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (category, title, summary, keywords) = parse_vision_text(&raw);
+
+    let meta = json!({
+        "manual_input": trimmed,
+        "keywords": keywords,
+    });
+    let storage_clone = storage.clone();
+    let title_clone = title.clone();
+    let summary_clone = summary.clone();
+    let category_clone = category.clone();
+    let meta_clone = meta.clone();
+    let id = tokio::task::spawn_blocking(move || {
+        storage_clone.add_work_log(
+            event_time,
+            "manual",
+            &title_clone,
+            &summary_clone,
+            Some(&category_clone),
+            meta_clone,
+            None,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    Ok(WorkLog {
+        id,
+        ts: event_time,
+        source: "manual".to_string(),
+        category: Some(category),
+        title,
+        content: summary,
+        meta,
+        created_at: event_time,
+    })
+}
+
 #[tauri::command]
 pub async fn list_templates() -> Result<Vec<ReportTemplate>, String> {
     Ok(templates::all())

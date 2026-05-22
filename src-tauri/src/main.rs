@@ -81,6 +81,7 @@ fn main() {
             commands::is_watching,
             commands::sync_git,
             commands::generate_report,
+            commands::add_manual_log,
             commands::list_templates,
             commands::export_report,
             commands::test_llm_connection,
