@@ -445,15 +445,11 @@ export default function Settings() {
                   }
                   placeholder="用于在列表中识别这条 provider"
                 />
-                <Input
-                  label="Provider"
+                <ProviderSelect
                   value={selectedProvider.provider}
-                  onChange={(e) =>
-                    updateProvider(selectedProvider.id, {
-                      provider: e.target.value,
-                    })
+                  onChange={(v) =>
+                    updateProvider(selectedProvider.id, { provider: v })
                   }
-                  placeholder="openai / azure / ollama / anthropic..."
                 />
                 <Input
                   label="Base URL"
@@ -1099,5 +1095,48 @@ function ListEditor({
         onRemove={(i) => onChange(items.filter((_, idx) => idx !== i))}
       />
     </div>
+  );
+}
+
+// 常见 provider 标识；不在列表的会作为额外选项保留，避免老配置丢值。
+const PROVIDER_OPTIONS = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic (Claude)' },
+  { value: 'azure', label: 'Azure OpenAI' },
+  { value: 'ollama', label: 'Ollama' },
+  { value: 'gemini', label: 'Google Gemini' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'moonshot', label: 'Moonshot (Kimi)' },
+  { value: 'qwen', label: 'Qwen (DashScope)' },
+  { value: 'zhipu', label: 'Zhipu (智谱)' },
+  { value: 'mistral', label: 'Mistral' },
+  { value: 'groq', label: 'Groq' },
+  { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'custom', label: '自定义' },
+] as const;
+
+function ProviderSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const known = PROVIDER_OPTIONS.some((o) => o.value === value);
+  return (
+    <Select
+      label="Provider"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {!known && value ? (
+        <option value={value}>{value}（自定义）</option>
+      ) : null}
+      {PROVIDER_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </Select>
   );
 }
