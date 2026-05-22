@@ -30,3 +30,6 @@ data/
 # Local config
 *.local.yml
 report-assistant.yml
+
+# Build logs
+tauri-build.log
