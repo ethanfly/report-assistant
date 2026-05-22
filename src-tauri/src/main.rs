@@ -1,3 +1,7 @@
+// release 构建时禁用控制台窗口（仅 Windows 生效），避免 GUI 程序闪一个黑色 cmd。
+// debug 构建仍保留 console，便于看 stderr/println。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 //! 小T日报助手 Tauri 主进程入口。
 
 mod commands;
