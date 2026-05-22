@@ -51,7 +51,9 @@ jobs:
             patchelf \
             file \
             fuse \
-            libfuse2
+            libfuse2 \
+            libpipewire-0.3-dev \
+            libclang-dev
 
       - name: Setup Node
         uses: actions/setup-node@v4
