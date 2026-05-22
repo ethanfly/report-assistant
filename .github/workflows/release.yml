@@ -53,7 +53,12 @@ jobs:
             fuse \
             libfuse2 \
             libpipewire-0.3-dev \
-            libclang-dev
+            libclang-dev \
+            libgbm-dev \
+            libegl-dev \
+            libwayland-dev \
+            libxcb1-dev \
+            libxkbcommon-dev
 
       - name: Setup Node
         uses: actions/setup-node@v4
