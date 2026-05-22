@@ -15,9 +15,13 @@
         "title": "小T日报助手",
         "width": 1200,
         "height": 780,
+        "minWidth": 960,
+        "minHeight": 640,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true
+        "decorations": false,
+        "transparent": false,
+        "shadow": true
       }
     ],
     "security": {

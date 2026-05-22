@@ -28,6 +28,7 @@ import { useWatchStatus } from '../hooks/useWatchStatus';
 import { useToast } from '../hooks/useToast';
 import clsx from 'clsx';
 
+/** 顶部 4 张统计卡 */
 function StatCard({
   label,
   value,
@@ -42,19 +43,19 @@ function StatCard({
   hint?: string;
 }) {
   return (
-    <div className="card flex items-center gap-4">
+    <div className="card hover:-translate-y-px hover:shadow-soft flex items-center gap-4">
       <div
         className={clsx(
-          'w-11 h-11 rounded-xl flex items-center justify-center',
+          'w-11 h-11 rounded-pix flex items-center justify-center border border-border',
           accent
         )}
       >
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-xs text-muted">{label}</div>
-        <div className="text-2xl font-semibold mt-0.5">{value}</div>
-        {hint && <div className="text-[11px] text-muted mt-1">{hint}</div>}
+        <div className="text-xs text-ink2">{label}</div>
+        <div className="text-2xl font-semibold mt-0.5 text-ink">{value}</div>
+        {hint && <div className="text-[11px] text-ink2 mt-1">{hint}</div>}
       </div>
     </div>
   );
@@ -203,8 +204,8 @@ export default function Home() {
     <div className="p-6 space-y-6">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">首页</h1>
-          <p className="text-sm text-muted mt-1">
+          <h1 className="text-2xl font-semibold text-ink text-pix">首页</h1>
+          <p className="text-sm text-ink2 mt-1">
             欢迎{config?.report.user_name ? `，${config.report.user_name}` : ''}！查看今日工作概览。
           </p>
         </div>
@@ -223,20 +224,20 @@ export default function Home() {
         <StatCard
           label="今日提交"
           value={todayCommits}
-          icon={<GitBranch size={20} className="text-primary" />}
+          icon={<GitBranch size={20} className="text-primary-700" />}
           accent="bg-primary-50"
         />
         <StatCard
           label="今日截图"
           value={todayShots}
-          icon={<Camera size={20} className="text-emerald-600" />}
-          accent="bg-emerald-50"
+          icon={<Camera size={20} className="text-primary-700" />}
+          accent="bg-primary-100"
         />
         <StatCard
           label="今日条目"
           value={logs.length}
-          icon={<FileText size={20} className="text-amber-600" />}
-          accent="bg-amber-50"
+          icon={<FileText size={20} className="text-accent-600" />}
+          accent="bg-accent-50"
         />
         <StatCard
           label="监听状态"
@@ -244,7 +245,7 @@ export default function Home() {
             <span
               className={clsx(
                 'text-base font-semibold',
-                status.running ? 'text-emerald-600' : 'text-muted'
+                status.running ? 'text-primary-700' : 'text-ink2'
               )}
             >
               {status.running ? '监听中' : '已停止'}
@@ -253,10 +254,10 @@ export default function Home() {
           icon={
             <Activity
               size={20}
-              className={status.running ? 'text-emerald-600' : 'text-muted'}
+              className={status.running ? 'text-primary-700' : 'text-ink2'}
             />
           }
-          accent={status.running ? 'bg-emerald-50' : 'bg-zinc-100'}
+          accent={status.running ? 'bg-primary-50' : 'bg-bg'}
           hint={
             status.running && status.intervalSeconds
               ? `每 ${status.intervalSeconds}s 一次`
@@ -320,7 +321,7 @@ export default function Home() {
         >
           <div className="space-y-2 max-h-[180px] overflow-auto pr-1">
             {monitors.length === 0 && (
-              <div className="text-sm text-muted py-2">暂未检测到显示器</div>
+              <div className="text-sm text-ink2 py-2">暂未检测到显示器</div>
             )}
             {monitors.map((m) => {
               const active = config?.screenshot.monitor_index === m.index;
@@ -329,26 +330,26 @@ export default function Home() {
                   key={m.index}
                   onClick={() => void onChangeMonitor(m.index)}
                   className={clsx(
-                    'w-full flex items-center gap-3 px-3 py-2 rounded-lg border text-left transition',
+                    'w-full flex items-center gap-3 px-3 py-2 rounded-pix border text-left transition-all',
                     active
                       ? 'border-primary bg-primary-50'
-                      : 'border-border hover:bg-zinc-50'
+                      : 'border-border hover:bg-bg hover:border-primary-300'
                   )}
                 >
                   <Monitor
                     size={16}
-                    className={active ? 'text-primary' : 'text-muted'}
+                    className={active ? 'text-primary-700' : 'text-ink2'}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">
+                    <div className="text-sm font-medium truncate text-ink">
                       #{m.index} {m.label}
                     </div>
-                    <div className="text-xs text-muted">
+                    <div className="text-xs text-ink2">
                       {m.width}×{m.height}
                     </div>
                   </div>
                   {active && (
-                    <span className="text-[11px] text-primary font-medium">
+                    <span className="text-[11px] text-primary-700 font-medium">
                       已选中
                     </span>
                   )}
@@ -364,25 +365,25 @@ export default function Home() {
         description="今日采集到的所有工作记录（最新在前）"
       >
         {logs.length === 0 ? (
-          <div className="py-10 text-center text-sm text-muted">
+          <div className="py-10 text-center text-sm text-ink2">
             今日暂无记录，开启监听或点击立即截图试试
           </div>
         ) : (
           <ul className="divide-y divide-border">
             {logs.slice(0, 30).map((l) => (
-              <li key={l.id} className="py-3 flex items-start gap-3">
+              <li key={l.id} className="py-3 flex items-start gap-3 hover:bg-bg/40 -mx-2 px-2 rounded-pix transition-colors">
                 <SourceTag source={l.source} category={l.category} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink truncate">
                     {l.title || '(无标题)'}
                   </div>
                   {l.content && (
-                    <div className="text-xs text-muted line-clamp-2 mt-0.5">
+                    <div className="text-xs text-ink2 line-clamp-2 mt-0.5">
                       {l.content}
                     </div>
                   )}
                 </div>
-                <div className="text-[11px] text-muted shrink-0">
+                <div className="text-[11px] text-ink2 shrink-0 font-mono">
                   {dayjs(l.ts).format('HH:mm:ss')}
                 </div>
               </li>
@@ -395,30 +396,30 @@ export default function Home() {
 }
 
 function SourceTag({ source, category }: { source: string; category?: string }) {
-  let cls = 'bg-zinc-100 text-muted';
+  let cls = 'bg-bg text-ink2';
   let label = source;
   if (source === 'git') {
     cls = 'bg-primary-50 text-primary-700';
     label = 'Git';
   } else if (source === 'screenshot') {
-    cls = 'bg-emerald-50 text-emerald-700';
+    cls = 'bg-primary-100 text-primary-800';
     label = '截图';
   } else if (source === 'manual') {
-    cls = 'bg-amber-50 text-amber-700';
+    cls = 'bg-accent-50 text-accent-600';
     label = '手动';
   }
   return (
     <div className="flex flex-col items-start shrink-0">
       <span
         className={clsx(
-          'text-[11px] px-2 py-0.5 rounded-md font-medium',
+          'text-[11px] px-2 py-0.5 rounded-pix font-medium',
           cls
         )}
       >
         {label}
       </span>
       {category && (
-        <span className="text-[10px] text-muted mt-1">{category}</span>
+        <span className="text-[10px] text-ink2 mt-1">{category}</span>
       )}
     </div>
   );

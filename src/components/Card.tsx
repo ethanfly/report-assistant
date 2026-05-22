@@ -8,8 +8,13 @@ interface CardProps {
   description?: ReactNode;
   footer?: ReactNode;
   noPadding?: boolean;
+  /** 是否启用 hover 微抬效果（默认 true） */
+  hoverable?: boolean;
 }
 
+/**
+ * 像素风卡片：1px 边框 + 像素风圆角 + hover 微抬
+ */
 export default function Card({
   children,
   className,
@@ -17,11 +22,13 @@ export default function Card({
   description,
   footer,
   noPadding,
+  hoverable = true,
 }: CardProps) {
   return (
     <section
       className={clsx(
-        'bg-white rounded-card shadow-card border border-border',
+        'bg-card rounded-card border border-border shadow-card transition-all duration-200',
+        hoverable && 'hover:-translate-y-px hover:shadow-soft',
         !noPadding && 'p-5',
         className
       )}
@@ -32,7 +39,7 @@ export default function Card({
             <h3 className="text-[15px] font-semibold text-ink">{title}</h3>
           )}
           {description && (
-            <p className="text-xs text-muted mt-1">{description}</p>
+            <p className="text-xs text-ink2 mt-1">{description}</p>
           )}
         </header>
       )}

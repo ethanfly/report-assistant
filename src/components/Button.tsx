@@ -1,6 +1,6 @@
 import { type ButtonHTMLAttributes, forwardRef, type ReactNode } from 'react';
 import clsx from 'clsx';
-import { Loader2 } from 'lucide-react';
+import Spinner from './Spinner';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -37,7 +37,7 @@ const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       {...rest}
     >
       {loading ? (
-        <Loader2 size={14} className="animate-spin" />
+        <Spinner size={3} />
       ) : icon ? (
         <span className="shrink-0">{icon}</span>
       ) : null}

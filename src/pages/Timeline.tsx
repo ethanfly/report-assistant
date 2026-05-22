@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import {
-  Calendar,
   ChevronLeft,
   ChevronRight,
   GitBranch,
@@ -13,6 +12,7 @@ import {
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Select } from '../components/Input';
+import DatePicker from '../components/DatePicker';
 import { deleteWorkLog, listWorkLogs } from '../api/ipc';
 import type { WorkLog } from '../api/types';
 import { useToast } from '../hooks/useToast';
@@ -86,8 +86,8 @@ export default function Timeline() {
     <div className="p-6 space-y-5">
       <header className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">时间线</h1>
-          <p className="text-sm text-muted mt-1">查看指定日期的工作流水</p>
+          <h1 className="text-2xl font-semibold text-ink text-pix">时间线</h1>
+          <p className="text-sm text-ink2 mt-1">查看指定日期的工作流水</p>
         </div>
         <Button
           variant="ghost"
@@ -100,9 +100,9 @@ export default function Timeline() {
         </Button>
       </header>
 
-      <Card>
+      <Card hoverable={false}>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -111,17 +111,8 @@ export default function Timeline() {
             >
               前一天
             </Button>
-            <div className="relative">
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="input-base pl-9 w-[180px]"
-              />
-              <Calendar
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
-              />
+            <div className="w-[180px]">
+              <DatePicker value={date} onChange={setDate} />
             </div>
             <Button
               variant="ghost"
@@ -152,24 +143,26 @@ export default function Timeline() {
             </Select>
           </div>
 
-          <div className="text-xs text-muted">共 {logs.length} 条</div>
+          <div className="text-xs text-ink2">共 {logs.length} 条</div>
         </div>
       </Card>
 
       {logs.length === 0 ? (
-        <Card>
-          <div className="py-16 text-center text-sm text-muted">
+        <Card hoverable={false}>
+          <div className="py-16 text-center text-sm text-ink2">
             该日期暂无记录
           </div>
         </Card>
       ) : (
         <div className="space-y-4">
           {grouped.map(([hour, items]) => (
-            <Card key={hour} noPadding>
+            <Card key={hour} noPadding hoverable={false}>
               <div className="px-5 pt-4 pb-2 flex items-center gap-2">
-                <span className="text-xs font-mono text-muted">{hour}</span>
+                <span className="text-xs font-mono text-primary-700 bg-primary-50 px-2 py-0.5 rounded-pix border border-primary-200">
+                  {hour}
+                </span>
                 <span className="h-px flex-1 bg-border" />
-                <span className="text-[11px] text-muted">{items.length} 条</span>
+                <span className="text-[11px] text-ink2">{items.length} 条</span>
               </div>
               <ul className="divide-y divide-border">
                 {items.map((l) => {
@@ -177,7 +170,7 @@ export default function Timeline() {
                   return (
                     <li
                       key={l.id}
-                      className="px-5 py-3 hover:bg-zinc-50/60 transition group"
+                      className="px-5 py-3 hover:bg-bg/60 transition-colors group"
                     >
                       <div className="flex items-start gap-3">
                         <div className="shrink-0 pt-0.5">
@@ -189,7 +182,7 @@ export default function Timeline() {
                               {l.title || '(无标题)'}
                             </span>
                             {l.category && (
-                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-zinc-100 text-muted">
+                              <span className="text-[11px] px-1.5 py-0.5 rounded-pix bg-bg text-ink2 border border-border">
                                 {l.category}
                               </span>
                             )}
@@ -197,7 +190,7 @@ export default function Timeline() {
                           {l.content && (
                             <div
                               className={clsx(
-                                'text-xs text-muted mt-1 whitespace-pre-wrap',
+                                'text-xs text-ink2 mt-1 whitespace-pre-wrap',
                                 !open && 'line-clamp-2'
                               )}
                             >
@@ -206,7 +199,7 @@ export default function Timeline() {
                           )}
                           {l.content && l.content.length > 100 && (
                             <button
-                              className="text-[11px] text-primary mt-1 hover:underline"
+                              className="text-[11px] text-primary-700 mt-1 hover:underline"
                               onClick={() =>
                                 setExpanded((s) => ({ ...s, [l.id]: !open }))
                               }
@@ -215,13 +208,13 @@ export default function Timeline() {
                             </button>
                           )}
                         </div>
-                        <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                          <span className="text-[11px] text-muted font-mono mr-1">
+                        <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[11px] text-ink2 font-mono mr-1">
                             {dayjs(l.ts).format('HH:mm:ss')}
                           </span>
                           <button
                             onClick={() => void onDelete(l.id)}
-                            className="p-1.5 rounded-md text-muted hover:text-red-500 hover:bg-red-50"
+                            className="p-1.5 rounded-pix text-ink2 hover:text-red-500 hover:bg-red-50 transition-colors"
                             title="删除"
                           >
                             <Trash2 size={14} />
@@ -243,20 +236,20 @@ export default function Timeline() {
 function SourceIcon({ source }: { source: string }) {
   if (source === 'git') {
     return (
-      <span className="w-7 h-7 rounded-md bg-primary-50 text-primary flex items-center justify-center">
+      <span className="w-7 h-7 rounded-pix bg-primary-50 text-primary-700 flex items-center justify-center border border-primary-200">
         <GitBranch size={14} />
       </span>
     );
   }
   if (source === 'screenshot') {
     return (
-      <span className="w-7 h-7 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center">
+      <span className="w-7 h-7 rounded-pix bg-primary-100 text-primary-800 flex items-center justify-center border border-primary-200">
         <Camera size={14} />
       </span>
     );
   }
   return (
-    <span className="w-7 h-7 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center">
+    <span className="w-7 h-7 rounded-pix bg-accent-50 text-accent-600 flex items-center justify-center border border-accent-100">
       <FileText size={14} />
     </span>
   );

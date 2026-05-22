@@ -1,121 +1,122 @@
 // 一次性图标生成工具：生成 report-assistant 的应用图标
-// 设计：圆角紫色方块 + 中间白色 "T" 字
+// 设计：32×32 像素艺术 — 清新绿系二次元少女头像
+// 渲染：nearest-neighbor 整数放大（不做抗锯齿，保留像素硬边）
 // 输出位置：src-tauri/icons/
 
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Transform};
+use tiny_skia::Pixmap;
 
-/// 紫色背景 #8B5CF6
-const BG_R: u8 = 0x8B;
-const BG_G: u8 = 0x5C;
-const BG_B: u8 = 0xF6;
+/// 32×32 像素艺术位图，每行严格 32 个字符。
+///
+/// 字符 → 颜色（详见 [`color_for_char`]）：
+/// - `.` 浅绿背景    `#` 深绿像素描边
+/// - `H` 头发（清新绿）  `S` 皮肤
+/// - `E` 眼瞳（黑）  `W` 眼睛高光（白）
+/// - `R` 红晕（粉）  `M` 嘴巴（深粉）
+#[rustfmt::skip]
+const PIXEL_ART_32: &[&str] = &[
+    "################################", //  0  上边框
+    "#.............HHHH.............#", //  1  头顶（4 像素）
+    "#...........HHHHHHHH...........#", //  2  （8）
+    "#.........HHHHHHHHHHHH.........#", //  3  （12）
+    "#.......HHHHHHHHHHHHHHHH.......#", //  4  （16）
+    "#.....HHHHHHHHHHHHHHHHHHHH.....#", //  5  （20）
+    "#....HHHHHHHHHHHHHHHHHHHHHH....#", //  6  （22）
+    "#...HHHHHHHHHHHHHHHHHHHHHHHH...#", //  7  （24）
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", //  8  （26）
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", //  9  刘海
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", // 10  刘海
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 11  额头开始（皮肤宽 16）
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 12  额头
+    "#.HHHHHHSSSWESSSSSSWESSSHHHHHH.#", // 13  眼上半（W=白色高光 E=黑色眼瞳）
+    "#.HHHHHHSSSEESSSSSSEESSSHHHHHH.#", // 14  眼下半
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 15  鼻梁区（留白）
+    "#.HHHHHHSSRSSSSSSSSSSRSSHHHHHH.#", // 16  红晕
+    "#.HHHHHHSSSSSSSMMSSSSSSSHHHHHH.#", // 17  嘴巴
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 18  脸颊
+    "#.HHHHHHHSSSSSSSSSSSSSSHHHHHHH.#", // 19  下巴开始收窄
+    "#..HHHHHHHSSSSSSSSSSSSHHHHHHH..#", // 20
+    "#...HHHHHHHSSSSSSSSSSHHHHHHH...#", // 21
+    "#....HHHHHHHHSSSSSSHHHHHHHH....#", // 22
+    "#......HHHHHHHHHHHHHHHHHH......#", // 23  下方头发
+    "#........HHHHHHHHHHHHHH........#", // 24
+    "#...........HHHHHHHH...........#", // 25
+    "#..............HH..............#", // 26  尾尖
+    "#..............................#", // 27
+    "#..............................#", // 28
+    "#..............................#", // 29
+    "#..............................#", // 30
+    "################################", // 31  下边框
+];
 
-/// 在指定边长上渲染图标，返回 RGBA pixmap
-fn render(size: u32) -> Result<Pixmap> {
-    let s = size as f32;
-
-    // 创建透明画布
-    let mut pixmap = Pixmap::new(size, size).context("创建 pixmap 失败")?;
-
-    // ---------- 1. 圆角紫色背景 ----------
-    let radius = s * 0.22; // iOS 风格圆角半径：边长的 22%
-    let bg_path = rounded_rect_path(0.0, 0.0, s, s, radius)
-        .context("构造圆角矩形路径失败")?;
-
-    let mut bg_paint = Paint::default();
-    bg_paint.set_color(Color::from_rgba8(BG_R, BG_G, BG_B, 255));
-    bg_paint.anti_alias = true;
-    pixmap.fill_path(
-        &bg_path,
-        &bg_paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
-
-    // ---------- 2. 白色 "T" 字（用矩形拼出） ----------
-    let mut fg_paint = Paint::default();
-    fg_paint.set_color(Color::from_rgba8(255, 255, 255, 255));
-    fg_paint.anti_alias = true;
-
-    // 横线：宽 = 边长 × 0.62，高 = 边长 × 0.13，置于顶部约 25% 位置居中
-    let h_w = s * 0.62;
-    let h_h = s * 0.13;
-    let h_x = (s - h_w) / 2.0;
-    let h_y = s * 0.25;
-    // 横线本身也加点小圆角，看起来更精致
-    let h_radius = h_h * 0.25;
-    let h_path = rounded_rect_path(h_x, h_y, h_w, h_h, h_radius)
-        .context("构造横线路径失败")?;
-    pixmap.fill_path(
-        &h_path,
-        &fg_paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
-
-    // 竖线：宽 = 边长 × 0.13，高 = 边长 × 0.5，与横线居中对齐（顶部对齐到横线下沿）
-    let v_w = s * 0.13;
-    let v_h = s * 0.5;
-    let v_x = (s - v_w) / 2.0;
-    let v_y = h_y; // 与横线顶端对齐，向下延伸
-    let v_radius = v_w * 0.25;
-    let v_path = rounded_rect_path(v_x, v_y, v_w, v_h, v_radius)
-        .context("构造竖线路径失败")?;
-    pixmap.fill_path(
-        &v_path,
-        &fg_paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
-
-    Ok(pixmap)
+/// 字符 → RGBA 颜色（清新绿系，alpha 全为 255）。
+fn color_for_char(c: char) -> [u8; 4] {
+    match c {
+        '.' => [0xE8, 0xF5, 0xE9, 0xFF], // 浅绿背景
+        '#' => [0x2E, 0x7D, 0x32, 0xFF], // 深绿像素描边
+        'H' => [0x7B, 0xC4, 0x7F, 0xFF], // 头发：清新绿
+        'S' => [0xFF, 0xE0, 0xBD, 0xFF], // 皮肤
+        'E' => [0x22, 0x22, 0x22, 0xFF], // 眼瞳（黑）
+        'W' => [0xFF, 0xFF, 0xFF, 0xFF], // 眼睛高光（白）
+        'R' => [0xFF, 0xB3, 0xB3, 0xFF], // 红晕（粉）
+        'M' => [0xE5, 0x73, 0x73, 0xFF], // 嘴巴（深粉）
+        _ => [0, 0, 0, 0],               // 未知字符 → 透明（理论上不会触发）
+    }
 }
 
-/// 构造一个圆角矩形路径
-fn rounded_rect_path(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    r: f32,
-) -> Option<tiny_skia::Path> {
-    // 限制半径不超过短边一半
-    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
+/// 把 32×32 像素艺术烤成一张 RGBA 调色板表，
+/// 同时校验行数=32 且每行长度严格为 32（否则 panic 提前报错）。
+fn build_palette() -> [[u8; 4]; 32 * 32] {
+    let mut palette = [[0u8; 4]; 32 * 32];
+    assert_eq!(PIXEL_ART_32.len(), 32, "PIXEL_ART_32 必须正好 32 行");
+    for (row_idx, row) in PIXEL_ART_32.iter().enumerate() {
+        let chars: Vec<char> = row.chars().collect();
+        assert_eq!(
+            chars.len(),
+            32,
+            "第 {} 行长度不是 32（实际 {}）：{}",
+            row_idx,
+            chars.len(),
+            row
+        );
+        for (col_idx, &ch) in chars.iter().enumerate() {
+            palette[row_idx * 32 + col_idx] = color_for_char(ch);
+        }
+    }
+    palette
+}
 
-    let mut pb = PathBuilder::new();
-    // 顺时针绘制，使用三次贝塞尔近似圆弧（系数 0.5523 ≈ 4*(sqrt(2)-1)/3）
-    let k = 0.5522847498_f32;
-    let cx = r * k;
+/// 在指定边长上渲染图标（nearest-neighbor 整数放大），返回 RGBA pixmap。
+///
+/// 不做任何抗锯齿，保留像素艺术的硬边。
+/// tiny-skia 的 `Pixmap` 内部为预乘 RGBA；本工具所有颜色 alpha=255，
+/// 预乘值等于未预乘值，故可直接写入字节缓冲。
+fn render(size: u32) -> Result<Pixmap> {
+    let palette = build_palette();
+    let mut pixmap = Pixmap::new(size, size).context("创建 pixmap 失败")?;
 
-    // 左上起点
-    pb.move_to(x + r, y);
-    // 顶边 → 右上角
-    pb.line_to(x + w - r, y);
-    pb.cubic_to(x + w - r + cx, y, x + w, y + r - cx, x + w, y + r);
-    // 右边 → 右下角
-    pb.line_to(x + w, y + h - r);
-    pb.cubic_to(x + w, y + h - r + cx, x + w - r + cx, y + h, x + w - r, y + h);
-    // 底边 → 左下角
-    pb.line_to(x + r, y + h);
-    pb.cubic_to(x + r - cx, y + h, x, y + h - r + cx, x, y + h - r);
-    // 左边 → 左上角
-    pb.line_to(x, y + r);
-    pb.cubic_to(x, y + r - cx, x + r - cx, y, x + r, y);
-    pb.close();
+    let data = pixmap.data_mut();
+    for y in 0..size {
+        // nearest-neighbor 采样：源 y = floor(y * 32 / size)
+        let sy = ((y as u64 * 32) / size as u64).min(31) as usize;
+        let row_offset = sy * 32;
+        for x in 0..size {
+            let sx = ((x as u64 * 32) / size as u64).min(31) as usize;
+            let rgba = palette[row_offset + sx];
+            let i = ((y * size + x) * 4) as usize;
+            data[i..i + 4].copy_from_slice(&rgba);
+        }
+    }
 
-    pb.finish()
+    Ok(pixmap)
 }
 
 /// 渲染为 RGBA 字节数据（连续 RGBA8888，行优先）
 fn render_rgba_bytes(size: u32) -> Result<Vec<u8>> {
     let pixmap = render(size)?;
-    // tiny-skia 的 Pixmap.data() 已经是 RGBA8888 顺序
     Ok(pixmap.data().to_vec())
 }
 
@@ -132,8 +133,7 @@ fn save_png(size: u32, path: &Path) -> Result<u64> {
 fn main() -> Result<()> {
     // 输出目录：相对于 workspace 根的 src-tauri/icons/
     // 用 CARGO_MANIFEST_DIR 推导，确保不论从哪里运行 cargo run 都能定位
-    let manifest_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")); // crates/icon-gen
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // crates/icon-gen
     let workspace_root = manifest_dir
         .parent()
         .and_then(|p| p.parent())

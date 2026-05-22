@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   Sparkles,
@@ -7,10 +7,15 @@ import {
   Trash2,
   Download,
   FolderOpen,
+  CalendarDays,
+  CalendarClock,
+  CalendarRange,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { Input, Textarea, Select } from '../components/Input';
+import { Textarea, Select } from '../components/Input';
+import DatePicker from '../components/DatePicker';
+import Tabs from '../components/Tabs';
 import MarkdownView from '../components/MarkdownView';
 import {
   deleteReport,
@@ -32,11 +37,22 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import clsx from 'clsx';
 
+type TabKey = 'Daily' | 'Weekly' | 'Monthly';
+
+const TABS = [
+  { key: 'Daily' as const, label: '日报', icon: <CalendarDays size={14} /> },
+  { key: 'Weekly' as const, label: '周报', icon: <CalendarRange size={14} /> },
+  { key: 'Monthly' as const, label: '月报', icon: <CalendarClock size={14} /> },
+];
+
 export default function Reports() {
   const toast = useToast();
   const { config } = useConfig();
 
-  const [kind, setKind] = useState<ReportKind>('Daily');
+  // tab 当前激活的报告类型
+  const [tab, setTab] = useState<TabKey>('Daily');
+
+  // 表单字段
   const [anchor, setAnchor] = useState<string>(dayjs().format('YYYY-MM-DD'));
   const [template, setTemplate] = useState<string>('');
   const [extra, setExtra] = useState<string>('');
@@ -55,13 +71,12 @@ export default function Reports() {
     try {
       const items = await listReports(50);
       setReports(items);
-      if (items.length && !selected) setSelected(items[0]);
     } catch (e: any) {
       toast.error(`加载报告失败: ${e}`);
     } finally {
       setLoadingList(false);
     }
-  }, [toast, selected]);
+  }, [toast]);
 
   const refreshTemplates = useCallback(async () => {
     try {
@@ -83,6 +98,25 @@ export default function Reports() {
     }
   }, [config, template]);
 
+  // 当前 tab 过滤后的报告列表
+  const filteredReports = useMemo(() => {
+    return reports.filter(
+      (r) => r.kind.toLowerCase() === tab.toLowerCase()
+    );
+  }, [reports, tab]);
+
+  // tab 切换或列表更新时同步 selected
+  useEffect(() => {
+    if (
+      selected &&
+      selected.kind.toLowerCase() !== tab.toLowerCase()
+    ) {
+      setSelected(filteredReports[0] ?? null);
+    } else if (!selected && filteredReports.length) {
+      setSelected(filteredReports[0]);
+    }
+  }, [tab, filteredReports, selected]);
+
   const onSelect = async (r: Report) => {
     setSelected(r);
     try {
@@ -98,7 +132,7 @@ export default function Reports() {
     setGenerating(true);
     try {
       const r = await generateReport({
-        kind,
+        kind: tab as ReportKind,
         anchor: dayjs(anchor).toISOString(),
         template: template || undefined,
         extra_notes: extra,
@@ -119,7 +153,12 @@ export default function Reports() {
   };
 
   const onDelete = async (r: Report) => {
-    if (!confirm(`确认删除报告「${kindLabel(r.kind)} · ${dayjs(r.period_start).format('YYYY-MM-DD')}」？`)) return;
+    if (
+      !confirm(
+        `确认删除报告「${kindLabel(r.kind)} · ${dayjs(r.period_start).format('YYYY-MM-DD')}」？`
+      )
+    )
+      return;
     try {
       const ok = await deleteReport(r.id);
       if (ok) {
@@ -161,12 +200,21 @@ export default function Reports() {
     }
   };
 
+  const anchorHint =
+    tab === 'Weekly'
+      ? '将取所在自然周'
+      : tab === 'Monthly'
+      ? '将取所在自然月'
+      : '取该日 0:00 - 23:59';
+
   return (
     <div className="p-6 space-y-5">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">报告</h1>
-          <p className="text-sm text-muted mt-1">生成日报 / 周报 / 月报，并管理历史报告</p>
+          <h1 className="text-2xl font-semibold text-ink text-pix">报告</h1>
+          <p className="text-sm text-ink2 mt-1">
+            生成日报 / 周报 / 月报，并管理历史报告
+          </p>
         </div>
         <Button
           variant="ghost"
@@ -179,32 +227,24 @@ export default function Reports() {
         </Button>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5">
-        {/* 左列：生成表单 */}
-        <Card title="生成新报告" description="选择类型与锚点日期，并可附加备注">
-          <div className="space-y-3">
-            <Select
-              label="报告类型"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as ReportKind)}
-            >
-              <option value="Daily">日报</option>
-              <option value="Weekly">周报</option>
-              <option value="Monthly">月报</option>
-            </Select>
+      {/* 报告类型 Tabs */}
+      <Tabs tabs={TABS} value={tab} onChange={setTab} />
 
-            <Input
+      <div
+        key={tab}
+        className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5 animate-fadein"
+      >
+        {/* 左列：生成表单（按当前 tab） */}
+        <Card
+          title={`生成${kindLabel(tab)}`}
+          description="选择锚点日期，并可附加备注"
+        >
+          <div className="space-y-3">
+            <DatePicker
               label="锚点日期"
-              type="date"
               value={anchor}
-              onChange={(e) => setAnchor(e.target.value)}
-              hint={
-                kind === 'Weekly'
-                  ? '将取所在自然周'
-                  : kind === 'Monthly'
-                  ? '将取所在自然月'
-                  : '取该日 0:00 - 23:59'
-              }
+              onChange={setAnchor}
+              hint={anchorHint}
             />
 
             <Select
@@ -229,7 +269,7 @@ export default function Reports() {
             />
 
             <div className="space-y-2 pt-1">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <label className="flex items-center gap-2 text-sm cursor-pointer text-ink">
                 <input
                   type="checkbox"
                   checked={includeGit}
@@ -238,7 +278,7 @@ export default function Reports() {
                 />
                 包含 Git 提交
               </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <label className="flex items-center gap-2 text-sm cursor-pointer text-ink">
                 <input
                   type="checkbox"
                   checked={includeShots}
@@ -255,7 +295,7 @@ export default function Reports() {
               loading={generating}
               onClick={() => void onGenerate()}
             >
-              生成报告
+              生成{kindLabel(tab)}
             </Button>
           </div>
         </Card>
@@ -263,38 +303,39 @@ export default function Reports() {
         {/* 右列：列表 + 预览 */}
         <div className="space-y-4">
           <Card
-            title="历史报告"
-            description={`已生成 ${reports.length} 份`}
+            title={`历史${kindLabel(tab)}`}
+            description={`共 ${filteredReports.length} 份`}
             noPadding
+            hoverable={false}
           >
-            {reports.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted">
-                还没有报告，先在左侧生成一份吧
+            {filteredReports.length === 0 ? (
+              <div className="py-10 text-center text-sm text-ink2">
+                还没有{kindLabel(tab)}，先在左侧生成一份吧
               </div>
             ) : (
               <ul className="max-h-[260px] overflow-auto divide-y divide-border">
-                {reports.map((r) => (
+                {filteredReports.map((r) => (
                   <li
                     key={r.id}
                     onClick={() => void onSelect(r)}
                     className={clsx(
-                      'px-5 py-3 cursor-pointer flex items-center gap-3 transition',
+                      'px-5 py-3 cursor-pointer flex items-center gap-3 transition-colors',
                       selected?.id === r.id
-                        ? 'bg-primary-50/70'
-                        : 'hover:bg-zinc-50'
+                        ? 'bg-primary-50'
+                        : 'hover:bg-bg'
                     )}
                   >
-                    <span className="w-7 h-7 rounded-md bg-primary-50 text-primary flex items-center justify-center shrink-0">
+                    <span className="w-7 h-7 rounded-pix bg-primary-50 text-primary-700 flex items-center justify-center shrink-0 border border-primary-200">
                       <FileText size={14} />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">
+                      <div className="text-sm font-medium truncate text-ink">
                         {kindLabel(r.kind)} ·{' '}
                         {dayjs(r.period_start).format('YYYY-MM-DD')}
                         {r.period_start !== r.period_end &&
                           ` ~ ${dayjs(r.period_end).format('MM-DD')}`}
                       </div>
-                      <div className="text-[11px] text-muted mt-0.5">
+                      <div className="text-[11px] text-ink2 mt-0.5">
                         生成于 {dayjs(r.created_at).format('YYYY-MM-DD HH:mm')}
                         {r.template && ` · ${r.template}`}
                       </div>
@@ -304,7 +345,7 @@ export default function Reports() {
                         e.stopPropagation();
                         void onDelete(r);
                       }}
-                      className="p-1.5 rounded-md text-muted hover:text-red-500 hover:bg-red-50"
+                      className="p-1.5 rounded-pix text-ink2 hover:text-red-500 hover:bg-red-50 transition-colors"
                       title="删除"
                     >
                       <Trash2 size={14} />
@@ -322,6 +363,7 @@ export default function Reports() {
                 ? `${kindLabel(selected.kind)} · ${dayjs(selected.period_start).format('YYYY-MM-DD')}`
                 : '从上方列表选择一份报告'
             }
+            hoverable={false}
             footer={
               selected && (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -352,7 +394,7 @@ export default function Reports() {
                   >
                     导出 TXT
                   </Button>
-                  <span className="ml-auto text-[11px] text-muted flex items-center gap-1">
+                  <span className="ml-auto text-[11px] text-ink2 flex items-center gap-1">
                     <FolderOpen size={12} />
                     导出后将定位到目录
                   </span>
@@ -361,11 +403,11 @@ export default function Reports() {
             }
           >
             {selected ? (
-              <div className="max-h-[480px] overflow-auto">
+              <div className="max-h-[480px] overflow-auto selectable">
                 <MarkdownView content={selected.content} />
               </div>
             ) : (
-              <div className="py-12 text-center text-sm text-muted">
+              <div className="py-12 text-center text-sm text-ink2">
                 未选中任何报告
               </div>
             )}
