@@ -39,6 +39,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Linux 平台需要 webkit / appindicator / patchelf 才能打包 .deb 和 AppImage
       - name: Install Linux deps
         if: matrix.platform.os == 'ubuntu-22.04'
         run: |
@@ -47,7 +48,10 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            file \
+            fuse \
+            libfuse2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -74,42 +78,67 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Build frontend
-        run: pnpm build
-
+      # 先编 CLI，独立的 workspace 包，产物在 target/release/
       - name: Build CLI
         shell: bash
         run: cargo build --release -p report-assistant-cli
 
-      - name: Build Tauri
+      # pnpm tauri build 会自动跑 pnpm build（前端）+ cargo build --release（src-tauri）
+      # 然后调 bundler 产出对应平台的安装包到 src-tauri/target/release/bundle/
+      - name: Build Tauri (frontend + bundle)
         shell: bash
-        working-directory: src-tauri
-        run: cargo build --release
+        run: pnpm tauri build
 
-      - name: Package artifacts (Windows)
+      # Windows: 收集 NSIS 安装器 + CLI 二进制
+      - name: Collect (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path "artifacts/${{ matrix.platform.asset_name }}" -Force | Out-Null
-          Copy-Item "src-tauri/target/release/report-assistant.exe" "artifacts/${{ matrix.platform.asset_name }}/小T日报助手.exe"
-          Copy-Item "target/release/report-assistant.exe" "artifacts/${{ matrix.platform.asset_name }}/report-assistant-cli.exe"
-          Compress-Archive -Path "artifacts/${{ matrix.platform.asset_name }}/*" -DestinationPath "artifacts/${{ matrix.platform.asset_name }}.zip"
+          New-Item -ItemType Directory -Path "artifacts" -Force | Out-Null
+          # NSIS 安装器（*-setup.exe）
+          $nsis = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe" -ErrorAction SilentlyContinue
+          if ($nsis) {
+            Copy-Item $nsis[0].FullName "artifacts/${{ matrix.platform.asset_name }}-installer.exe"
+          } else {
+            Write-Warning "未找到 NSIS 安装器"
+          }
+          # CLI 二进制
+          if (Test-Path "target/release/report-assistant.exe") {
+            Copy-Item "target/release/report-assistant.exe" "artifacts/${{ matrix.platform.asset_name }}-cli.exe"
+          } else {
+            Write-Warning "未找到 CLI 二进制"
+          }
+          Get-ChildItem artifacts
 
-      - name: Package artifacts (Unix)
-        if: runner.os != 'Windows'
+      # macOS: 收集 DMG + CLI 二进制（GitHub-hosted runner 现在是 arm64）
+      - name: Collect (macOS)
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          mkdir -p "artifacts/${{ matrix.platform.asset_name }}"
-          cp src-tauri/target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}/" || true
-          cp target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}/report-assistant-cli" || true
-          cd artifacts && zip -r "${{ matrix.platform.asset_name }}.zip" "${{ matrix.platform.asset_name }}"
+          mkdir -p artifacts
+          cp src-tauri/target/release/bundle/dmg/*.dmg "artifacts/${{ matrix.platform.asset_name }}-installer.dmg" 2>/dev/null || echo "未找到 DMG"
+          cp target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}-cli" 2>/dev/null || echo "未找到 CLI 二进制"
+          chmod +x artifacts/* 2>/dev/null || true
+          ls -lh artifacts
 
-      - name: Upload artifact
+      # Linux: 收集 AppImage + .deb + CLI 二进制
+      - name: Collect (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "artifacts/${{ matrix.platform.asset_name }}.AppImage" 2>/dev/null || echo "未找到 AppImage"
+          cp src-tauri/target/release/bundle/deb/*.deb "artifacts/${{ matrix.platform.asset_name }}.deb" 2>/dev/null || echo "未找到 deb 包"
+          cp target/release/report-assistant "artifacts/${{ matrix.platform.asset_name }}-cli" 2>/dev/null || echo "未找到 CLI 二进制"
+          chmod +x artifacts/* 2>/dev/null || true
+          ls -lh artifacts
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform.asset_name }}
-          path: artifacts/${{ matrix.platform.asset_name }}.zip
-          if-no-files-found: error
+          path: artifacts/*
+          if-no-files-found: warn
 
   release:
     name: Create Release
@@ -144,6 +173,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # 把三个平台的 artifact 全部下载并平铺到 artifacts/
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -165,14 +195,23 @@ jobs:
             ## 变更
             ${{ steps.changelog.outputs.changelog }}
 
-            ## 下载
-            解压 zip 后双击 `小T日报助手.exe`（Windows）或对应可执行文件运行；
-            随包附带 `report-assistant-cli` 命令行工具。
+            ## 下载方式
+            - **Windows 用户**：下载 `*-installer.exe` 双击安装（NSIS 安装器）
+            - **macOS 用户**：下载 `*-installer.dmg` 拖到 Applications
+            - **Linux 用户**：下载 `*.AppImage`（赋执行权后双击）或 `*.deb` 包
+            - **命令行用户**：下载 `*-cli` / `*-cli.exe`
 
-            - **Windows**：`*-windows-x64.zip`
-            - **macOS**：`*-macos-aarch64.zip`
-            - **Linux**：`*-linux-x64.zip`
-          files: artifacts/*.zip
+            ## 文件命名
+            - Windows：`*-windows-x64-installer.exe` / `*-windows-x64-cli.exe`
+            - macOS（Apple Silicon）：`*-macos-aarch64-installer.dmg` / `*-macos-aarch64-cli`
+            - Linux：`*-linux-x64.AppImage` / `*-linux-x64.deb` / `*-linux-x64-cli`
+          # 把所有平台所有产物都挂到 Release 上
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*-cli
           draft: false
           prerelease: false
           generate_release_notes: false
