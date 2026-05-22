@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import {
   Save,
   CheckCircle2,
@@ -13,12 +13,18 @@ import {
   FileText,
   Settings as SettingsIcon,
   Database,
+  FolderGit2,
+  FolderPlus,
+  Plus,
+  Mail,
+  User,
 } from 'lucide-react';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Tabs from '../components/Tabs';
 import Spinner from '../components/Spinner';
-import { Input, Textarea, Select } from '../components/Input';
+import { Input, Select } from '../components/Input';
 import {
   openLogDir,
   purgeAll,
@@ -145,6 +151,23 @@ export default function Settings() {
   const update = <K extends keyof Config>(key: K, value: Config[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
 
+  // 浏览并添加 Git 仓库目录（支持多选）
+  const browseRepos = async () => {
+    try {
+      const picked = await openDialog({
+        directory: true,
+        multiple: true,
+        title: '选择 Git 仓库目录（可多选）',
+      });
+      if (!picked) return;
+      const list = Array.isArray(picked) ? picked : [picked];
+      const next = Array.from(new Set([...draft.git.repos, ...list]));
+      update('git', { ...draft.git, repos: next });
+    } catch (e: any) {
+      toast.error(`选择目录失败: ${e}`);
+    }
+  };
+
   return (
     <div className="p-6 space-y-5 pb-24">
       <header className="flex items-end justify-between">
@@ -155,15 +178,17 @@ export default function Settings() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* 顶部按钮统一 md 尺寸，保证视觉等高 */}
           <Button
-            variant="secondary"
-            size="sm"
+            variant="ghost"
+            size="md"
             icon={<FolderOpen size={14} />}
             onClick={() => void onOpenLogDir()}
           >
             打开日志目录
           </Button>
           <Button
+            size="md"
             icon={<Save size={14} />}
             onClick={() => void onSave()}
             loading={saving}
@@ -274,48 +299,60 @@ export default function Settings() {
         {tab === 'git' && (
           <Card
             title="Git 监听"
-            description="多仓库提交采集与作者过滤（每行一条）"
+            description="多仓库提交采集与作者过滤"
             hoverable={false}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Textarea
-                label="仓库路径"
-                rows={4}
-                value={draft.git.repos.join('\n')}
-                onChange={(e) =>
-                  update('git', {
-                    ...draft.git,
-                    repos: splitLines(e.target.value),
-                  })
-                }
-                placeholder={'C:/workspace/repo-a\nC:/workspace/repo-b'}
-              />
-              <div className="grid grid-cols-1 gap-3">
-                <Textarea
-                  label="作者邮箱白名单"
-                  rows={2}
-                  value={draft.git.author_emails.join('\n')}
-                  onChange={(e) =>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* 仓库路径列表 */}
+              <div className="lg:col-span-2">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-ink">仓库路径</label>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<FolderPlus size={14} />}
+                    onClick={() => void browseRepos()}
+                  >
+                    浏览并添加...
+                  </Button>
+                </div>
+                <ListBox
+                  empty="尚未添加任何仓库，点击上方按钮添加。"
+                  items={draft.git.repos}
+                  renderIcon={() => (
+                    <FolderGit2 size={14} className="text-primary shrink-0" />
+                  )}
+                  onRemove={(i) =>
                     update('git', {
                       ...draft.git,
-                      author_emails: splitLines(e.target.value),
+                      repos: draft.git.repos.filter((_, idx) => idx !== i),
                     })
                   }
-                  placeholder="me@example.com"
-                />
-                <Textarea
-                  label="作者名称白名单"
-                  rows={2}
-                  value={draft.git.author_names.join('\n')}
-                  onChange={(e) =>
-                    update('git', {
-                      ...draft.git,
-                      author_names: splitLines(e.target.value),
-                    })
-                  }
-                  placeholder="Ethan"
                 />
               </div>
+
+              {/* 作者邮箱白名单 */}
+              <ListEditor
+                label="作者邮箱白名单"
+                placeholder="me@example.com"
+                items={draft.git.author_emails}
+                icon={<Mail size={14} className="text-primary shrink-0" />}
+                onChange={(next) =>
+                  update('git', { ...draft.git, author_emails: next })
+                }
+              />
+
+              {/* 作者名称白名单 */}
+              <ListEditor
+                label="作者名称白名单"
+                placeholder="Ethan"
+                items={draft.git.author_names}
+                icon={<User size={14} className="text-primary shrink-0" />}
+                onChange={(next) =>
+                  update('git', { ...draft.git, author_names: next })
+                }
+              />
+
               <Input
                 label="轮询间隔（秒）"
                 type="number"
@@ -635,9 +672,112 @@ function Stat({
   );
 }
 
-function splitLines(s: string): string[] {
-  return s
-    .split(/\r?\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
+// ----------------- 列表 UI 子组件 -----------------
+
+// 通用只读列表：每行显示文本，hover 显示删除按钮
+function ListBox({
+  items,
+  empty,
+  renderIcon,
+  onRemove,
+}: {
+  items: string[];
+  empty: string;
+  renderIcon?: (item: string, idx: number) => React.ReactNode;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div className="border border-border rounded-md divide-y divide-border bg-card">
+      {items.length === 0 ? (
+        <div className="px-3 py-4 text-sm text-ink2 text-center">{empty}</div>
+      ) : (
+        items.map((item, i) => (
+          <div
+            key={`${item}-${i}`}
+            className="flex items-center gap-2 px-3 py-2 hover:bg-bg group"
+          >
+            {renderIcon?.(item, i)}
+            <span
+              className="text-sm text-ink truncate flex-1"
+              title={item}
+            >
+              {item}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemove(i)}
+              className="opacity-0 group-hover:opacity-100 text-ink2 hover:text-red-500 transition"
+              title="删除"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// 带输入框的列表编辑器：用于邮箱/姓名等纯文本数组
+function ListEditor({
+  label,
+  placeholder,
+  items,
+  icon,
+  onChange,
+}: {
+  label: string;
+  placeholder?: string;
+  items: string[];
+  icon?: React.ReactNode;
+  onChange: (next: string[]) => void;
+}) {
+  const [input, setInput] = useState('');
+
+  const add = () => {
+    const v = input.trim();
+    if (!v) return;
+    if (items.includes(v)) {
+      setInput('');
+      return;
+    }
+    onChange([...items, v]);
+    setInput('');
+  };
+
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      add();
+    }
+  };
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-ink mb-2 block">{label}</label>
+      <div className="flex items-center gap-2 mb-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKey}
+          placeholder={placeholder}
+          className="flex-1 h-9 px-3 text-sm rounded-md border border-border bg-card text-ink placeholder:text-ink2 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        />
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={<Plus size={14} />}
+          onClick={add}
+        >
+          添加
+        </Button>
+      </div>
+      <ListBox
+        items={items}
+        empty="暂无，输入后回车或点击添加"
+        renderIcon={() => icon}
+        onRemove={(i) => onChange(items.filter((_, idx) => idx !== i))}
+      />
+    </div>
+  );
 }

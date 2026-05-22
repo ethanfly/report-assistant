@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "report-assistant",
+  "productName": "小T日报助手",
   "version": "0.2.0",
   "identifier": "com.reportassistant.desktop",
   "build": {
