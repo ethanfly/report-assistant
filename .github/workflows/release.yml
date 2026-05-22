@@ -25,7 +25,7 @@ jobs:
           - os: macos-latest
             asset_name: report-assistant-${{ github.run_number }}-macos-aarch64
             tauri_target: aarch64-apple-darwin
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             asset_name: report-assistant-${{ github.run_number }}-linux-x64
             tauri_target: x86_64-unknown-linux-gnu
 
@@ -41,7 +41,7 @@ jobs:
 
       # Linux 平台需要 webkit / appindicator / patchelf 才能打包 .deb 和 AppImage
       - name: Install Linux deps
-        if: matrix.platform.os == 'ubuntu-22.04'
+        if: matrix.platform.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
