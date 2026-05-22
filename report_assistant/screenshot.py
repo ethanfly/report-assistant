@@ -104,6 +104,10 @@ def get_idle_seconds() -> int:
     return 0
 
 
+# 视觉模型用 1280px 宽就够了；过大反而拖慢 UI 线程（PIL/base64 持 GIL）
+_MAX_DIMENSION = 1600
+
+
 def capture_screen(
     output_dir: str | Path,
     monitor_index: int = 1,
@@ -111,6 +115,12 @@ def capture_screen(
     """全屏截图并保存为 PNG，返回文件路径。
 
     monitor_index：0=所有屏幕合并；1+=指定屏幕。
+
+    注意：本函数会被 WatchWorker 在后台线程调用，但 PIL/PNG 编码持有 GIL，
+    因此过大或 optimize=True 都会让 UI 卡顿。这里：
+    1) 长边超过 1600px 时按比例缩小（视觉模型完全够用）
+    2) 关闭 PIL 的 optimize（PNG 优化压缩可能持 GIL 几秒）
+    3) compress_level=1（最快压缩）
     """
     try:
         import mss
@@ -129,7 +139,14 @@ def capture_screen(
         monitor = sct.monitors[monitor_index]
         raw = sct.grab(monitor)
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-        img.save(out_path, format="PNG", optimize=True)
+        # 等比例缩到长边 _MAX_DIMENSION 内
+        w, h = img.size
+        m = max(w, h)
+        if m > _MAX_DIMENSION:
+            ratio = _MAX_DIMENSION / m
+            new_size = (int(w * ratio), int(h * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+        img.save(out_path, format="PNG", optimize=False, compress_level=1)
     return out_path
 
 

@@ -47,14 +47,34 @@ class Storage:
         self.db_path = Path(str(db_path)).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        self._enable_wal()
 
     def _init_schema(self) -> None:
         with self._conn() as c:
             c.executescript(SCHEMA)
 
+    def _enable_wal(self) -> None:
+        """开启 WAL 模式让读写并发不互相阻塞。
+
+        默认 SQLite 用 rollback journal + 排他锁，写库时所有读会被卡。
+        WatchWorker 持续写库 + UI 线程读库的场景下，会让 GUI 频繁出现
+        卡住几秒后才响应的现象。WAL 模式下读写互不阻塞。
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            # 失败也不致命，老的 rollback journal 模式仍可工作
+            pass
+
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
+        # timeout=10：拿不到锁时等 10 秒（默认 5），避免 OperationalError
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
