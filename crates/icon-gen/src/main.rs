@@ -19,36 +19,36 @@ use tiny_skia::Pixmap;
 #[rustfmt::skip]
 const PIXEL_ART_32: &[&str] = &[
     "################################", //  0  上边框
-    "#.............HHHH.............#", //  1  头顶（4 像素）
-    "#...........HHHHHHHH...........#", //  2  （8）
-    "#.........HHHHHHHHHHHH.........#", //  3  （12）
-    "#.......HHHHHHHHHHHHHHHH.......#", //  4  （16）
-    "#.....HHHHHHHHHHHHHHHHHHHH.....#", //  5  （20）
-    "#....HHHHHHHHHHHHHHHHHHHHHH....#", //  6  （22）
-    "#...HHHHHHHHHHHHHHHHHHHHHHHH...#", //  7  （24）
-    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", //  8  （26）
-    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", //  9  刘海
-    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", // 10  刘海
-    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 11  额头开始（皮肤宽 16）
-    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 12  额头
-    "#.HHHHHHSSSWESSSSSSWESSSHHHHHH.#", // 13  眼上半（W=白色高光 E=黑色眼瞳）
-    "#.HHHHHHSSSEESSSSSSEESSSHHHHHH.#", // 14  眼下半
-    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 15  鼻梁区（留白）
-    "#.HHHHHHSSRSSSSSSSSSSRSSHHHHHH.#", // 16  红晕
-    "#.HHHHHHSSSSSSSMMSSSSSSSHHHHHH.#", // 17  嘴巴
-    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 18  脸颊
-    "#.HHHHHHHSSSSSSSSSSSSSSHHHHHHH.#", // 19  下巴开始收窄
-    "#..HHHHHHHSSSSSSSSSSSSHHHHHHH..#", // 20
-    "#...HHHHHHHSSSSSSSSSSHHHHHHH...#", // 21
-    "#....HHHHHHHHSSSSSSHHHHHHHH....#", // 22
-    "#......HHHHHHHHHHHHHHHHHH......#", // 23  下方头发
-    "#........HHHHHHHHHHHHHH........#", // 24
-    "#...........HHHHHHHH...........#", // 25
-    "#..............HH..............#", // 26  尾尖
-    "#..............................#", // 27
-    "#..............................#", // 28
-    "#..............................#", // 29
-    "#..............................#", // 30
+    "#..............................#", //  1  顶部留白
+    "#..............................#", //  2  顶部留白
+    "#.............HHHH.............#", //  3  头顶（4 像素）
+    "#...........HHHHHHHH...........#", //  4  （8）
+    "#.........HHHHHHHHHHHH.........#", //  5  （12）
+    "#.......HHHHHHHHHHHHHHHH.......#", //  6  （16）
+    "#.....HHHHHHHHHHHHHHHHHHHH.....#", //  7  （20）
+    "#....HHHHHHHHHHHHHHHHHHHHHH....#", //  8  （22）
+    "#...HHHHHHHHHHHHHHHHHHHHHHHH...#", //  9  （24）
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", // 10  （26）
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", // 11  刘海
+    "#..HHHHHHHHHHHHHHHHHHHHHHHHHH..#", // 12  刘海
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 13  额头开始
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 14  额头
+    "#.HHHHHHSSSWESSSSSSWESSSHHHHHH.#", // 15  眼上半
+    "#.HHHHHHSSSEESSSSSSEESSSHHHHHH.#", // 16  眼下半
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 17  鼻梁区
+    "#.HHHHHHSSRSSSSSSSSSSRSSHHHHHH.#", // 18  红晕
+    "#.HHHHHHSSSSSSSMMSSSSSSSHHHHHH.#", // 19  嘴巴
+    "#.HHHHHHSSSSSSSSSSSSSSSSHHHHHH.#", // 20  脸颊
+    "#.HHHHHHHSSSSSSSSSSSSSSHHHHHHH.#", // 21  下巴开始收窄
+    "#..HHHHHHHSSSSSSSSSSSSHHHHHHH..#", // 22
+    "#...HHHHHHHSSSSSSSSSSHHHHHHH...#", // 23
+    "#....HHHHHHHHSSSSSSHHHHHHHH....#", // 24
+    "#......HHHHHHHHHHHHHHHHHH......#", // 25  下方头发
+    "#........HHHHHHHHHHHHHH........#", // 26
+    "#...........HHHHHHHH...........#", // 27
+    "#..............HH..............#", // 28  尾尖
+    "#..............................#", // 29  底部留白
+    "#..............................#", // 30  底部留白
     "################################", // 31  下边框
 ];
 
