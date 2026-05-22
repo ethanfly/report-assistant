@@ -405,9 +405,43 @@ pub async fn generate_report(
         .clone();
     let llm = LlmClient::new(text_provider).map_err(|e| e.to_string())?;
 
+    // 生成期间暂停 watch worker：避免与 LLM 抢配额、抢带宽。
+    // 用 RAII guard 保证无论返回成功还是失败都会 resume。
+    let _watch_guard = WatchPauseGuard::new(state.watch.lock().clone());
+
     generator::generate_report(&cfg, &storage, &llm, request)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// RAII：构造时若 watch 在跑则 pause，drop 时无条件 resume。
+///
+/// 这样无论 generate_report 走 Ok / Err / 早返回（panic 时 unwind 也行），
+/// watch 都会被恢复，不会卡在暂停态。
+struct WatchPauseGuard {
+    handle: Option<report_assistant_core::watch::WatchHandle>,
+}
+
+impl WatchPauseGuard {
+    fn new(handle: Option<report_assistant_core::watch::WatchHandle>) -> Self {
+        if let Some(h) = handle.as_ref() {
+            if h.is_running() {
+                tracing::info!("生成报告：暂停截图监听");
+                h.pause();
+                return Self { handle };
+            }
+        }
+        Self { handle: None }
+    }
+}
+
+impl Drop for WatchPauseGuard {
+    fn drop(&mut self) {
+        if let Some(h) = self.handle.as_ref() {
+            tracing::info!("生成报告完成：恢复截图监听");
+            h.resume();
+        }
+    }
 }
 
 #[tauri::command]

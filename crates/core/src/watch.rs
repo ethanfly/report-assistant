@@ -69,6 +69,9 @@ pub struct WatchHandle {
 
 struct Inner {
     stop_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// 暂停标志：true 时 run_loop 会跳过截图与分析，但保持 task 不退出。
+    /// 用于"生成报告"等耗时阻塞场景，避免与 LLM 抢配额；不影响 stop/start 状态。
+    pause_flag: Arc<std::sync::atomic::AtomicBool>,
     sender: broadcast::Sender<WatchEvent>,
     join: Mutex<Option<JoinHandle<()>>>,
 }
@@ -93,6 +96,27 @@ impl WatchHandle {
             .load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// 暂停截图循环（不停止 task，可通过 resume 立即恢复）。
+    pub fn pause(&self) {
+        self.inner
+            .pause_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 恢复因 pause 暂停的截图循环。
+    pub fn resume(&self) {
+        self.inner
+            .pause_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// 当前是否处于暂停状态。
+    pub fn is_paused(&self) -> bool {
+        self.inner
+            .pause_flag
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// 等待 worker task 真正结束。
     pub async fn join(&self) {
         let join = self.inner.join.lock().take();
@@ -109,19 +133,22 @@ impl WatchHandle {
 pub fn start(cfg: Config, storage_db: storage::Storage) -> WatchHandle {
     let (tx, _rx) = broadcast::channel::<WatchEvent>(64);
     let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let pause_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let cfg_arc = Arc::new(cfg);
     let interval = cfg_arc.screenshot.interval_seconds.max(10);
 
     let tx_clone = tx.clone();
     let stop_clone = stop_flag.clone();
+    let pause_clone = pause_flag.clone();
 
     let task = tokio::spawn(async move {
-        run_loop(cfg_arc, storage_db, tx_clone, stop_clone, interval).await;
+        run_loop(cfg_arc, storage_db, tx_clone, stop_clone, pause_clone, interval).await;
     });
 
     let inner = Inner {
         stop_flag,
+        pause_flag,
         sender: tx,
         join: Mutex::new(Some(task)),
     };
@@ -133,6 +160,7 @@ async fn run_loop(
     storage_db: storage::Storage,
     tx: broadcast::Sender<WatchEvent>,
     stop: Arc<std::sync::atomic::AtomicBool>,
+    pause: Arc<std::sync::atomic::AtomicBool>,
     interval: u64,
 ) {
     // 构造 LLM 客户端：监听必须有"默认视觉模型"
@@ -181,6 +209,13 @@ async fn run_loop(
     let keep = cfg.screenshot.keep_after_analysis;
 
     while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+        // 暂停检测：处于 pause 时跳过本轮，但保持循环存活，直到 resume 或 stop。
+        if pause.load(std::sync::atomic::Ordering::SeqCst) {
+            // 短间隔轮询，保证 resume 后能快速恢复；同时尊重 stop。
+            sleep_interruptible(2, &stop).await;
+            continue;
+        }
+
         // 空闲检测
         if idle_threshold > 0 {
             let idle = screenshot::idle_seconds();
