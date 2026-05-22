@@ -29,7 +29,7 @@ dirs.workspace = true
 uuid.workspace = true
 
 # 截图（跨平台）
-xcap = "0.0.14"
+xcap = "0.9"
 
 # Markdown 渲染（用于报告导出 HTML）
 pulldown-cmark = "0.12"

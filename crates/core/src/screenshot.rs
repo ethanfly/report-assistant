@@ -53,8 +53,17 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
     let mut out: Vec<MonitorInfo> = Vec::with_capacity(monitors.len() + 1);
 
     // 合并条目：宽高取所有屏幕的最大值，便于 UI 估算
-    let max_w = monitors.iter().map(|m| m.width()).max().unwrap_or(0);
-    let max_h = monitors.iter().map(|m| m.height()).max().unwrap_or(0);
+    // xcap 0.9+ width/height 返回 Result<u32, _>，失败兜底 0
+    let max_w = monitors
+        .iter()
+        .map(|m| m.width().unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+    let max_h = monitors
+        .iter()
+        .map(|m| m.height().unwrap_or(0))
+        .max()
+        .unwrap_or(0);
     out.push(MonitorInfo {
         index: 0,
         label: format!("全部屏幕（{} 个）", monitors.len()),
@@ -63,8 +72,8 @@ pub fn list_monitors() -> Vec<MonitorInfo> {
     });
 
     for (i, m) in monitors.iter().enumerate() {
-        let w = m.width();
-        let h = m.height();
+        let w = m.width().unwrap_or(0);
+        let h = m.height().unwrap_or(0);
         out.push(MonitorInfo {
             index: (i as i32) + 1,
             label: format!("屏幕 {} · {}×{}", i + 1, w, h),
@@ -126,7 +135,10 @@ pub fn capture_screen(output_dir: impl AsRef<Path>, monitor_index: i32) -> Resul
 fn pick_monitor(monitors: &[Monitor], monitor_index: i32) -> Monitor {
     if monitor_index <= 0 {
         // 0 = 主屏；找不到 primary 则退到第一个
-        if let Some(m) = monitors.iter().find(|m| m.is_primary()) {
+        if let Some(m) = monitors
+            .iter()
+            .find(|m| m.is_primary().unwrap_or(false))
+        {
             return m.clone();
         }
         return monitors[0].clone();
