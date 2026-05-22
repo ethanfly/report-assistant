@@ -242,6 +242,12 @@ pub async fn start_watch(
     app: AppHandle,
     state: State<'_, AppStateHandle>,
 ) -> Result<(), String> {
+    launch_watch(&app, &state)
+}
+
+/// 内部启动逻辑：被 start_watch 命令和应用启动时的 auto_start 共用。
+/// 已在跑则幂等返回 Ok。订阅 broadcast 事件后桥接到前端 watch-event。
+pub fn launch_watch(app: &AppHandle, state: &AppStateHandle) -> Result<(), String> {
     // 已在跑：幂等返回。
     {
         let g = state.watch.lock();

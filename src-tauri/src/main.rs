@@ -88,6 +88,27 @@ fn main() {
         ])
         .setup(|app| {
             tray::setup(app.handle())?;
+
+            // 启动时检查 auto_start：开启且 LLM 已配置则自动启用监听。
+            // 延迟 1.5s 让 webview 先初始化，避免 watch-event 早于前端订阅丢事件。
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                let state: tauri::State<'_, crate::state::AppStateHandle> = app_handle.state();
+                let (auto_start, has_key) = {
+                    let cfg = state.config.lock();
+                    (cfg.screenshot.auto_start, !cfg.llm.api_key.trim().is_empty())
+                };
+                if auto_start && has_key {
+                    tracing::info!("auto_start 已启用，自动开始监听");
+                    if let Err(e) = commands::launch_watch(&app_handle, &state) {
+                        tracing::warn!("auto_start 启动失败: {}", e);
+                    }
+                } else if auto_start && !has_key {
+                    tracing::warn!("auto_start 已启用但 LLM API Key 未配置，跳过");
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
