@@ -37,11 +37,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: report-assistant-${{ github.run_number }}-windows-x64.exe
+            asset_name: report-assistant-${{ github.run_number }}-windows-x64.zip
           - os: macos-latest
             asset_name: report-assistant-${{ github.run_number }}-macos.zip
           - os: ubuntu-latest
-            asset_name: report-assistant-${{ github.run_number }}-linux-x64
+            asset_name: report-assistant-${{ github.run_number }}-linux-x64.zip
 
     runs-on: ${{ matrix.os }}
 
@@ -65,31 +65,24 @@ jobs:
           python -m report_assistant.desktop.assets.generate_logo
           python -m report_assistant.desktop.assets.generate_arrows
 
+      # 统一用项目里的 spec 文件构建（onedir 模式 + 无 UPX），
+      # 启动几乎瞬开，避免 onefile 的 75MB 解压卡顿。
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --windowed --onefile `
-            --name report-assistant `
-            --icon report_assistant/desktop/assets/logo.ico `
-            --collect-all report_assistant `
-            --add-data "report_assistant/desktop/assets;report_assistant/desktop/assets" `
-            entry.py
-          Move-Item dist\report-assistant.exe "dist\${{ matrix.asset_name }}"
+          pyinstaller --noconfirm report-assistant.spec
+          Compress-Archive -Path dist\report-assistant\* -DestinationPath "dist\${{ matrix.asset_name }}"
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
         run: |
-          pyinstaller --noconfirm --windowed --onefile \
-            --name report-assistant \
-            --collect-all report_assistant \
-            --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
-            entry.py
+          pyinstaller --noconfirm report-assistant.spec
           cd dist
           if [ -d "report-assistant.app" ]; then
             zip -r "${{ matrix.asset_name }}" "report-assistant.app"
           else
-            zip "${{ matrix.asset_name }}" "report-assistant"
+            zip -r "${{ matrix.asset_name }}" "report-assistant"
           fi
 
       - name: Build (Linux)
@@ -97,12 +90,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
-          pyinstaller --noconfirm --onefile \
-            --name report-assistant \
-            --collect-all report_assistant \
-            --add-data "report_assistant/desktop/assets:report_assistant/desktop/assets" \
-            entry.py
-          mv dist/report-assistant "dist/${{ matrix.asset_name }}"
+          pyinstaller --noconfirm report-assistant.spec
+          cd dist
+          zip -r "${{ matrix.asset_name }}" "report-assistant"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -167,9 +157,11 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
 
             ## 下载
-            - **Windows**：`*-windows-x64.exe`
+            解压 zip 后双击 `report-assistant.exe`（Windows）或对应可执行文件运行。
+
+            - **Windows**：`*-windows-x64.zip`
             - **macOS**：`*-macos.zip`
-            - **Linux**：`*-linux-x64`
+            - **Linux**：`*-linux-x64.zip`
           files: artifacts/*
           draft: false
           prerelease: false
