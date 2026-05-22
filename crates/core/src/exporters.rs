@@ -1,14 +1,15 @@
-//! 报告导出：把报告内容（Markdown）保存为 .md / .html / .txt 文件。
+//! 报告导出：把报告内容（Markdown）保存为 .md / .html / .txt / .docx 文件。
 //!
 //! - .md：原样写入；
 //! - .html：使用 pulldown-cmark 渲染为完整的 HTML 文档；
-//! - .txt：原 Markdown 文本（不做转换，便于纯文本场景粘贴）。
+//! - .txt：原 Markdown 文本（不做转换，便于纯文本场景粘贴）；
+//! - .docx：用 docx-rs 把 Markdown 行级转成 Word 段落（h1/h2/h3 加粗放大）。
 
 use std::path::{Path, PathBuf};
 
 use pulldown_cmark::{Options, Parser, html};
 
-use crate::{Result, storage::Report};
+use crate::{Error, Result, storage::Report};
 
 /// 导出格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +17,7 @@ pub enum ExportFormat {
     Md,
     Html,
     Txt,
+    Docx,
 }
 
 impl ExportFormat {
@@ -25,6 +27,7 @@ impl ExportFormat {
             ExportFormat::Md => "md",
             ExportFormat::Html => "html",
             ExportFormat::Txt => "txt",
+            ExportFormat::Docx => "docx",
         }
     }
 }
@@ -50,13 +53,71 @@ pub fn export_report(
     );
     let path = dir.join(file_name);
 
-    let bytes: Vec<u8> = match fmt {
-        ExportFormat::Md | ExportFormat::Txt => report.content.as_bytes().to_vec(),
-        ExportFormat::Html => render_html(report).into_bytes(),
-    };
+    match fmt {
+        ExportFormat::Md | ExportFormat::Txt => {
+            std::fs::write(&path, report.content.as_bytes())?;
+        }
+        ExportFormat::Html => {
+            std::fs::write(&path, render_html(report).into_bytes())?;
+        }
+        ExportFormat::Docx => {
+            // docx-rs 的 pack 需要 Write + Seek，直接写入文件最稳妥。
+            let file = std::fs::File::create(&path)?;
+            write_docx(report, file)?;
+        }
+    }
 
-    std::fs::write(&path, bytes)?;
     Ok(path)
+}
+
+/// 把 Markdown 内容转成 docx 并写入指定 writer。
+///
+/// 简化策略：按 `\n` 拆行，识别行首 `# ` / `## ` / `### ` 作为各级标题
+/// （加粗 + 放大字号），其它内容统一作为普通段落输出，不解析列表 / 代码块 /
+/// 链接等。字号单位是 docx-rs 的"半点"（half-point），22 即 11pt。
+fn write_docx<W: std::io::Write + std::io::Seek>(report: &Report, writer: W) -> Result<()> {
+    use docx_rs::{Docx, Paragraph, Run};
+
+    let mut docx = Docx::new();
+
+    // 文档第一段：标题（kind + 时间区间）
+    let title = format!(
+        "{} {} ~ {}",
+        report.kind,
+        report.period_start.format("%Y-%m-%d"),
+        report.period_end.format("%Y-%m-%d"),
+    );
+    docx = docx.add_paragraph(
+        Paragraph::new().add_run(Run::new().add_text(&title).size(36).bold()),
+    );
+
+    // 按行解析正文，逐行生成 Paragraph
+    for raw in report.content.split('\n') {
+        let line = raw.trim_end_matches('\r');
+
+        // 判断标题级别（前缀 + 字号 + 是否加粗）
+        let (text, size, bold) = if let Some(rest) = line.strip_prefix("# ") {
+            (rest, 32_usize, true)
+        } else if let Some(rest) = line.strip_prefix("## ") {
+            (rest, 28_usize, true)
+        } else if let Some(rest) = line.strip_prefix("### ") {
+            (rest, 26_usize, true)
+        } else {
+            (line, 22_usize, false)
+        };
+
+        // 空行也保留为空段落，维持视觉间距
+        let mut run = Run::new().add_text(text).size(size);
+        if bold {
+            run = run.bold();
+        }
+        docx = docx.add_paragraph(Paragraph::new().add_run(run));
+    }
+
+    docx.build()
+        .pack(writer)
+        .map_err(|e| Error::internal(format!("生成 docx 失败: {}", e)))?;
+    Ok(())
 }
 
 /// 把 Markdown 渲染成一个最小可用的 HTML 文档（含 UTF-8 + 简单样式）。

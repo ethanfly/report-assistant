@@ -3,7 +3,8 @@ import clsx from 'clsx';
 import Spinner from './Spinner';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md' | 'lg';
+// 全局只保留 sm / md 两档
+type Size = 'sm' | 'md';
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
@@ -19,10 +20,10 @@ const variantClass: Record<Variant, string> = {
   danger: 'btn-danger',
 };
 
+// 强制等高，sm/md 二选一；同一行使用同一档可保证视觉对齐
 const sizeClass: Record<Size, string> = {
-  sm: 'px-2.5 py-1.5 text-xs',
-  md: '',
-  lg: 'px-5 py-2.5 text-[15px]',
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-9 px-4 text-sm',
 };
 
 const Button = forwardRef<HTMLButtonElement, Props>(function Button(
@@ -39,7 +40,7 @@ const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       {loading ? (
         <Spinner size={3} />
       ) : icon ? (
-        <span className="shrink-0">{icon}</span>
+        <span className="shrink-0 inline-flex items-center">{icon}</span>
       ) : null}
       {children}
     </button>

@@ -29,7 +29,7 @@ export default function Sidebar() {
       {/* 顶部 logo + 标题 */}
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <Avatar src="/avatar.png" size={32} bordered />
+          <Avatar src="/avatar.png" size={32} />
           <div className="leading-tight min-w-0">
             <div className="text-[14px] font-semibold text-ink text-pix truncate">
               小T日报助手

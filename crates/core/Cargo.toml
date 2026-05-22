@@ -34,6 +34,9 @@ xcap = "0.0.14"
 # Markdown 渲染（用于报告导出 HTML）
 pulldown-cmark = "0.12"
 
+# Word 文档生成（用于报告导出 .docx）
+docx-rs = "0.4"
+
 # Windows 空闲检测
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

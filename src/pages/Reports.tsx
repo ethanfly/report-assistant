@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
   Sparkles,
@@ -15,6 +16,8 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import { Textarea, Select } from '../components/Input';
 import DatePicker from '../components/DatePicker';
+import WeekPicker from '../components/WeekPicker';
+import MonthPicker from '../components/MonthPicker';
 import Tabs from '../components/Tabs';
 import MarkdownView from '../components/MarkdownView';
 import {
@@ -48,6 +51,7 @@ const TABS = [
 export default function Reports() {
   const toast = useToast();
   const { config } = useConfig();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // tab 当前激活的报告类型
   const [tab, setTab] = useState<TabKey>('Daily');
@@ -91,6 +95,23 @@ export default function Reports() {
     void refresh();
     void refreshTemplates();
   }, [refresh, refreshTemplates]);
+
+  // 从 URL ?kind=daily|weekly|monthly 同步 tab（仅首次）
+  useEffect(() => {
+    const k = (searchParams.get('kind') || '').toLowerCase();
+    const map: Record<string, TabKey> = {
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+    };
+    if (k && map[k]) {
+      setTab(map[k]);
+      const next = new URLSearchParams(searchParams);
+      next.delete('kind');
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (config && !template) {
@@ -240,12 +261,31 @@ export default function Reports() {
           description="选择锚点日期，并可附加备注"
         >
           <div className="space-y-3">
-            <DatePicker
-              label="锚点日期"
-              value={anchor}
-              onChange={setAnchor}
-              hint={anchorHint}
-            />
+            {/* 不同 kind 切换不同选择器 */}
+            {tab === 'Daily' && (
+              <DatePicker
+                label="锚点日期"
+                value={anchor}
+                onChange={setAnchor}
+                hint={anchorHint}
+              />
+            )}
+            {tab === 'Weekly' && (
+              <WeekPicker
+                label="选择周"
+                value={anchor}
+                onChange={setAnchor}
+                hint={anchorHint}
+              />
+            )}
+            {tab === 'Monthly' && (
+              <MonthPicker
+                label="选择月"
+                value={anchor}
+                onChange={setAnchor}
+                hint={anchorHint}
+              />
+            )}
 
             <Select
               label="模板"
@@ -384,6 +424,15 @@ export default function Reports() {
                     onClick={() => void onExport('html')}
                   >
                     导出 HTML
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<Download size={14} />}
+                    loading={exporting === 'docx'}
+                    onClick={() => void onExport('docx')}
+                  >
+                    导出 Word
                   </Button>
                   <Button
                     variant="secondary"

@@ -385,6 +385,7 @@ pub async fn export_report(
         "md" | "markdown" => ExportFormat::Md,
         "html" | "htm" => ExportFormat::Html,
         "txt" | "text" => ExportFormat::Txt,
+        "docx" | "word" => ExportFormat::Docx,
         other => return Err(format!("不支持的导出格式: {}", other)),
     };
 

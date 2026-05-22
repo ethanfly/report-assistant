@@ -132,4 +132,4 @@ export type WatchEvent =
   | { type: 'idle_skipped'; idle_seconds: number }
   | { type: 'stopped' };
 
-export type ExportFormat = 'md' | 'html' | 'txt';
+export type ExportFormat = 'md' | 'html' | 'txt' | 'docx';

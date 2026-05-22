@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
   Camera,
@@ -8,8 +9,10 @@ import {
   Play,
   Square,
   RefreshCw,
-  Sparkles,
   Monitor,
+  CalendarDays,
+  CalendarRange,
+  CalendarClock,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -63,6 +66,7 @@ function StatCard({
 
 export default function Home() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { config, save } = useConfig();
   const { status } = useWatchStatus();
 
@@ -112,6 +116,12 @@ export default function Home() {
   );
   const todayShots = useMemo(
     () => logs.filter((l) => l.source === 'screenshot').length,
+    [logs]
+  );
+
+  // 倒序：最新在前
+  const sortedLogs = useMemo(
+    () => [...logs].sort((a, b) => b.ts.localeCompare(a.ts)),
     [logs]
   );
 
@@ -268,49 +278,78 @@ export default function Home() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card title="快速操作" className="lg:col-span-2">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* 6 个等高按钮，3 列网格，并排时统一对齐 */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             {status.running ? (
               <Button
                 variant="secondary"
+                size="md"
                 icon={<Square size={14} />}
                 onClick={onStop}
                 loading={busy.stop}
+                className="w-full"
               >
                 停止监听
               </Button>
             ) : (
               <Button
                 variant="primary"
+                size="md"
                 icon={<Play size={14} />}
                 onClick={onStart}
                 loading={busy.start}
+                className="w-full"
               >
                 开始监听
               </Button>
             )}
             <Button
               variant="secondary"
+              size="md"
               icon={<Camera size={14} />}
               onClick={onCapture}
               loading={busy.cap}
+              className="w-full"
             >
               立即截图
             </Button>
             <Button
               variant="secondary"
+              size="md"
               icon={<GitBranch size={14} />}
               onClick={onSyncGit}
               loading={busy.git}
+              className="w-full"
             >
               同步 Git
             </Button>
             <Button
               variant="primary"
-              icon={<Sparkles size={14} />}
+              size="md"
+              icon={<CalendarDays size={14} />}
               onClick={onGenDaily}
               loading={busy.gen}
+              className="w-full"
             >
               生成今日日报
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={<CalendarRange size={14} />}
+              onClick={() => navigate('/reports?kind=weekly')}
+              className="w-full"
+            >
+              生成本周周报
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={<CalendarClock size={14} />}
+              onClick={() => navigate('/reports?kind=monthly')}
+              className="w-full"
+            >
+              生成本月月报
             </Button>
           </div>
         </Card>
@@ -370,7 +409,7 @@ export default function Home() {
           </div>
         ) : (
           <ul className="divide-y divide-border">
-            {logs.slice(0, 30).map((l) => (
+            {sortedLogs.slice(0, 30).map((l) => (
               <li key={l.id} className="py-3 flex items-start gap-3 hover:bg-bg/40 -mx-2 px-2 rounded-pix transition-colors">
                 <SourceTag source={l.source} category={l.category} />
                 <div className="flex-1 min-w-0">
