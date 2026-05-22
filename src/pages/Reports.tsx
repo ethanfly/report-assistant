@@ -20,6 +20,7 @@ import WeekPicker from '../components/WeekPicker';
 import MonthPicker from '../components/MonthPicker';
 import Tabs from '../components/Tabs';
 import MarkdownView from '../components/MarkdownView';
+import LoadingOverlay from '../components/LoadingOverlay';
 import {
   deleteReport,
   exportReport,
@@ -47,6 +48,23 @@ const TABS = [
   { key: 'Weekly' as const, label: '周报', icon: <CalendarRange size={14} /> },
   { key: 'Monthly' as const, label: '月报', icon: <CalendarClock size={14} /> },
 ];
+
+/** 把 invoke 抛回来的各种形态（Error / 字符串 / 对象）正规化成可读字符串。 */
+function formatError(e: unknown): string {
+  if (e == null) return '未知错误';
+  if (typeof e === 'string') return e;
+  if (e instanceof Error) return e.message || String(e);
+  if (typeof e === 'object') {
+    const anyE = e as { message?: unknown; toString?: () => string };
+    if (typeof anyE.message === 'string') return anyE.message;
+    try {
+      return JSON.stringify(e);
+    } catch {
+      return String(e);
+    }
+  }
+  return String(e);
+}
 
 export default function Reports() {
   const toast = useToast();
@@ -167,7 +185,15 @@ export default function Reports() {
       const full = await getReport(r.report_id);
       if (full) setSelected(full);
     } catch (e: any) {
-      toast.error(`生成失败: ${e}`);
+      const raw = formatError(e);
+      const isTimeout = /timeout|timed out|超时/i.test(raw);
+      const message = isTimeout
+        ? `响应超时：LLM 没有在配置的超时时间内返回结果。\n\n建议：\n· 增大设置 → LLM 的「超时（秒）」\n· 检查网络或代理是否可访问 base_url\n· 切换为更快的模型，或减少时间窗口内的截图/提交数量`
+        : raw;
+      toast.alert(message, {
+        title: isTimeout ? '响应超时' : `生成${kindLabel(tab as ReportKind)}失败`,
+        kind: 'error',
+      });
     } finally {
       setGenerating(false);
     }
@@ -230,6 +256,10 @@ export default function Reports() {
 
   return (
     <div className="p-6 space-y-5">
+      <LoadingOverlay
+        open={generating}
+        title={`正在生成${kindLabel(tab as ReportKind)}...`}
+      />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-ink text-pix">报告</h1>

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import LoadingOverlay from '../components/LoadingOverlay';
 import {
   captureOnce,
   generateReport,
@@ -192,7 +193,17 @@ export default function Home() {
           `已生成今日日报（提交 ${r.commit_count} 条 / 截图 ${r.screenshot_count} 条）`
         );
       } catch (e: any) {
-        toast.error(`生成失败: ${e}`);
+        const raw =
+          typeof e === 'string'
+            ? e
+            : (e?.message as string | undefined) ?? String(e);
+        const isTimeout = /timeout|timed out|超时/i.test(raw);
+        toast.alert(
+          isTimeout
+            ? `响应超时：LLM 没有在配置的超时时间内返回结果。\n\n建议：\n· 增大设置 → LLM 的「超时（秒）」\n· 检查网络或代理是否可访问 base_url\n· 切换为更快的模型`
+            : raw,
+          { title: isTimeout ? '响应超时' : '生成日报失败', kind: 'error' }
+        );
       }
     });
 
@@ -212,6 +223,7 @@ export default function Home() {
 
   return (
     <div className="p-6 space-y-6">
+      <LoadingOverlay open={busy.gen} title="正在生成今日日报..." />
       <header className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-ink text-pix">首页</h1>
