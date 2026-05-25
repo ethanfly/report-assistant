@@ -25,8 +25,23 @@ use report_assistant_core::{
 };
 use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::state::AppStateHandle;
+
+/// 把系统级开机自启状态同步为期望值。失败仅记录日志，不阻断保存流程。
+pub fn sync_autostart(app: &AppHandle, desired: bool) {
+    let mgr = app.autolaunch();
+    let current = mgr.is_enabled().unwrap_or(false);
+    if current == desired {
+        return;
+    }
+    let res = if desired { mgr.enable() } else { mgr.disable() };
+    match res {
+        Ok(_) => tracing::info!("autostart 已同步为 {}", desired),
+        Err(e) => tracing::warn!("autostart 同步失败 (desired={}): {}", desired, e),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 配置
@@ -41,9 +56,15 @@ pub async fn load_config(state: State<'_, AppStateHandle>) -> Result<Config, Str
 
 /// 持久化配置到磁盘并替换内存副本。
 #[tauri::command]
-pub async fn save_config(state: State<'_, AppStateHandle>, cfg: Config) -> Result<(), String> {
+pub async fn save_config(
+    app: AppHandle,
+    state: State<'_, AppStateHandle>,
+    cfg: Config,
+) -> Result<(), String> {
+    let desired_autostart = cfg.app.auto_launch_on_boot;
     config::save(&cfg).map_err(|e| e.to_string())?;
     *state.config.lock() = cfg;
+    sync_autostart(&app, desired_autostart);
     Ok(())
 }
 
