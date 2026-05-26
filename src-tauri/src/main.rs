@@ -50,18 +50,19 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // 二开实例：激活既有主窗口。
+            // 如果参数包含 --hidden（开机自启唤起），不显示窗口。
+            let hidden = _argv.iter().any(|a| a == "--hidden");
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.unminimize();
-                let _ = w.set_focus();
+                if !hidden {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
             }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::load_config,
@@ -89,6 +90,15 @@ fn main() {
         ])
         .setup(|app| {
             tray::setup(app.handle())?;
+
+            // 正常启动（非开机自启）时显示主窗口。
+            // 开机自启时通过 --hidden 参数静默启动到系统托盘。
+            let is_autostart = std::env::args().any(|a| a == "--hidden");
+            if !is_autostart {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
+            }
 
             // 启动时检查 auto_start：开启且 LLM 已配置则自动启用监听。
             // 延迟 1.5s 让 webview 先初始化，避免 watch-event 早于前端订阅丢事件。
