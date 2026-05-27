@@ -218,7 +218,7 @@ impl Storage {
         Ok(conn.last_insert_rowid())
     }
 
-    /// 列出 `[start, end]` 闭区间内的 work_log，按 `ts` 升序。
+    /// 列出 `[start, end]` 闭区间内的 work_log，按 `ts` 倒序（最新在前）。
     pub fn list_work_logs(
         &self,
         start: DateTime<Local>,
@@ -235,7 +235,7 @@ impl Storage {
                 "SELECT id, ts, source, category, title, content, meta, created_at \
                  FROM work_logs \
                  WHERE ts >= ?1 AND ts <= ?2 AND source = ?3 \
-                 ORDER BY ts ASC",
+                 ORDER BY ts DESC",
             )?;
             stmt.query(params![start_s, end_s, src])?
         } else {
@@ -243,7 +243,7 @@ impl Storage {
                 "SELECT id, ts, source, category, title, content, meta, created_at \
                  FROM work_logs \
                  WHERE ts >= ?1 AND ts <= ?2 \
-                 ORDER BY ts ASC",
+                 ORDER BY ts DESC",
             )?;
             stmt.query(params![start_s, end_s])?
         };
