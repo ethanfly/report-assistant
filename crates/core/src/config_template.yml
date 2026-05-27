@@ -32,6 +32,7 @@ report:
 
 app:
   auto_launch_on_boot: false
+  silent_launch: false
   cleanup_keep_days: 60
 
 db_path: ""

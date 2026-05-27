@@ -355,6 +355,8 @@ impl Default for ReportConfig {
 pub struct AppConfig {
     #[serde(default)]
     pub auto_launch_on_boot: bool,
+    #[serde(default)]
+    pub silent_launch: bool,
     #[serde(default = "default_cleanup_days")]
     pub cleanup_keep_days: i64,
 }
@@ -363,6 +365,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             auto_launch_on_boot: false,
+            silent_launch: false,
             cleanup_keep_days: default_cleanup_days(),
         }
     }

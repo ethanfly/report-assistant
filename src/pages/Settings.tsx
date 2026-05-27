@@ -874,6 +874,20 @@ export default function Settings() {
                 />
                 开机自启
               </label>
+              <label className="flex items-center gap-2 text-sm self-end pb-2 text-ink">
+                <input
+                  type="checkbox"
+                  checked={draft.app.silent_launch}
+                  onChange={(e) =>
+                    update('app', {
+                      ...draft.app,
+                      silent_launch: e.target.checked,
+                    })
+                  }
+                  className="accent-primary"
+                />
+                静默启动（不显示窗口）
+              </label>
               <Input
                 label="自动清理（天数，0 关闭）"
                 type="number"

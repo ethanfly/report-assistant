@@ -53,6 +53,7 @@ export interface ReportConfig {
 
 export interface AppConfig {
   auto_launch_on_boot: boolean;
+  silent_launch: boolean;
   cleanup_keep_days: number;
 }
 

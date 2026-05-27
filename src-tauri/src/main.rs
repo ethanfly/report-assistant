@@ -93,8 +93,14 @@ fn main() {
 
             // 正常启动（非开机自启）时显示主窗口。
             // 开机自启时通过 --hidden 参数静默启动到系统托盘。
+            // 或者用户配置了 silent_launch 时也静默启动。
             let is_autostart = std::env::args().any(|a| a == "--hidden");
-            if !is_autostart {
+            let silent = {
+                let state: tauri::State<'_, crate::state::AppStateHandle> = app.state();
+                let cfg = state.config.lock();
+                cfg.app.silent_launch
+            };
+            if !is_autostart && !silent {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                 }
