@@ -347,8 +347,16 @@ pub async fn is_watching(state: State<'_, AppStateHandle>) -> Result<bool, Strin
 /// 调用方应在 UI 上做相应提示。
 #[tauri::command]
 pub async fn sync_git(state: State<'_, AppStateHandle>) -> Result<usize, String> {
-    let cfg = state.config.lock().clone();
-    let storage = state.storage.clone();
+    do_sync_git(&state.config, &state.storage).await
+}
+
+/// sync_git 的实际实现，接受 config/storage 引用，供后台 task 等非 tauri command 上下文复用。
+pub async fn do_sync_git(
+    config: &parking_lot::Mutex<report_assistant_core::config::Config>,
+    storage: &report_assistant_core::storage::Storage,
+) -> Result<usize, String> {
+    let cfg = config.lock().clone();
+    let storage = storage.clone();
     let kind = templates::Kind::Daily;
     let count = tokio::task::spawn_blocking(move || {
         // 1. 清空旧的 git 记录。失败时直接抛错，避免落入"删一半再写一半"的状态。

@@ -137,6 +137,35 @@ fn main() {
                 }
             });
 
+            // Git 自动定时同步：按 poll_interval_seconds 间隔循环调用 do_sync_git。
+            // poll_interval_seconds <= 0 或未配置任何仓库时跳过。
+            let app_handle2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+                let state: tauri::State<'_, crate::state::AppStateHandle> = app_handle2.state();
+                let (poll_interval, has_repos) = {
+                    let cfg = state.config.lock();
+                    (cfg.git.poll_interval_seconds, !cfg.git.repos.is_empty())
+                };
+                if poll_interval == 0 || !has_repos {
+                    tracing::info!(
+                        poll_interval,
+                        has_repos,
+                        "git 自动同步未启用"
+                    );
+                    return;
+                }
+                tracing::info!(poll_interval, "git 自动同步已启动");
+                loop {
+                    tracing::info!("git 自动同步：开始");
+                    match commands::do_sync_git(&state.config, &state.storage).await {
+                        Ok(n) => tracing::info!(n, "git 自动同步完成"),
+                        Err(e) => tracing::warn!("git 自动同步失败: {}", e),
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
