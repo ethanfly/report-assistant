@@ -371,6 +371,56 @@ impl Default for AppConfig {
     }
 }
 
+fn default_todo_hotkey() -> String {
+    // Alt+Space：轻量唤起「输入 + 列表」一体弹窗（托盘/最小化同样生效）
+    "Alt+Space".to_string()
+}
+
+/// 待办 / 备忘录相关配置。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoConfig {
+    /// 全局快捷键：弹出「输入 + 列表」一体窗口。
+    /// 使用 tauri-plugin-global-shortcut 格式，默认 `Alt+Space`。
+    /// 空字符串表示禁用。
+    #[serde(default = "default_todo_hotkey")]
+    pub hotkey: String,
+
+    // —— 兼容旧配置字段（读写时忽略语义，仅迁移用）——
+    /// 已弃用：请使用 `hotkey`。反序列化时若 `hotkey` 缺省会回退到此字段。
+    #[serde(default, skip_serializing)]
+    pub quick_add_hotkey: Option<String>,
+    /// 已弃用。
+    #[serde(default, skip_serializing)]
+    pub list_hotkey: Option<String>,
+}
+
+impl Default for TodoConfig {
+    fn default() -> Self {
+        Self {
+            hotkey: default_todo_hotkey(),
+            quick_add_hotkey: None,
+            list_hotkey: None,
+        }
+    }
+}
+
+impl TodoConfig {
+    /// 解析实际生效的快捷键：优先 `hotkey`，否则回退旧字段，再否则默认。
+    pub fn effective_hotkey(&self) -> String {
+        let h = self.hotkey.trim();
+        if !h.is_empty() {
+            return h.to_string();
+        }
+        if let Some(q) = self.quick_add_hotkey.as_deref() {
+            let q = q.trim();
+            if !q.is_empty() {
+                return q.to_string();
+            }
+        }
+        default_todo_hotkey()
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -383,6 +433,8 @@ pub struct Config {
     pub report: ReportConfig,
     #[serde(default)]
     pub app: AppConfig,
+    #[serde(default)]
+    pub todo: TodoConfig,
     /// 数据库路径；空表示用默认 (~/.report-assistant/data.sqlite)
     #[serde(default)]
     pub db_path: String,

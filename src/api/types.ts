@@ -57,12 +57,22 @@ export interface AppConfig {
   cleanup_keep_days: number;
 }
 
+export interface TodoConfig {
+  /** 全局快捷键：一体弹窗（输入+列表）；默认 Alt+Space；空字符串禁用 */
+  hotkey: string;
+  /** @deprecated 兼容旧配置 */
+  quick_add_hotkey?: string | null;
+  /** @deprecated 兼容旧配置 */
+  list_hotkey?: string | null;
+}
+
 export interface Config {
   llm: LlmConfig;
   git: GitConfig;
   screenshot: ScreenshotConfig;
   report: ReportConfig;
   app: AppConfig;
+  todo: TodoConfig;
   db_path: string;
 }
 
@@ -75,6 +85,16 @@ export interface WorkLog {
   content: string;
   meta: any;
   created_at: string;
+}
+
+export interface Todo {
+  id: number;
+  content: string;
+  /** pending | done */
+  status: string;
+  created_at: string;
+  completed_at?: string | null;
+  work_log_id?: number | null;
 }
 
 export interface Report {
@@ -120,6 +140,7 @@ export interface GenerateResult {
   content: string;
   commit_count: number;
   screenshot_count: number;
+  todo_count?: number;
   report_id: number;
 }
 
@@ -128,6 +149,8 @@ export interface StorageStats {
   reports_total: number;
   earliest_log?: string;
   latest_log?: string;
+  todos_pending?: number;
+  todos_done?: number;
 }
 
 export interface PurgeStats {

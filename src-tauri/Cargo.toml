@@ -14,6 +14,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
 report-assistant-core = { path = "../crates/core" }
 tokio = { version = "1.40", features = ["full"] }
 anyhow = "1.0"

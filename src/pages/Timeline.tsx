@@ -6,6 +6,7 @@ import {
   GitBranch,
   Camera,
   FileText,
+  ListTodo,
   Trash2,
   RefreshCw,
   Plus,
@@ -21,7 +22,7 @@ import type { WorkLog } from '../api/types';
 import { useToast } from '../hooks/useToast';
 import clsx from 'clsx';
 
-type SourceFilter = 'all' | 'git' | 'screenshot' | 'manual';
+type SourceFilter = 'all' | 'git' | 'screenshot' | 'manual' | 'todo';
 
 export default function Timeline() {
   const toast = useToast();
@@ -251,6 +252,7 @@ export default function Timeline() {
               onChange={(e) => setFilter(e.target.value as SourceFilter)}
             >
               <option value="all">全部来源</option>
+              <option value="todo">待办完成</option>
               <option value="git">Git 提交</option>
               <option value="screenshot">截图</option>
               <option value="manual">手动</option>
@@ -359,6 +361,13 @@ function SourceIcon({ source }: { source: string }) {
     return (
       <span className="w-7 h-7 rounded-pix bg-primary-100 text-primary-800 flex items-center justify-center border border-primary-200">
         <Camera size={14} />
+      </span>
+    );
+  }
+  if (source === 'todo') {
+    return (
+      <span className="w-7 h-7 rounded-pix bg-primary-50 text-primary-700 flex items-center justify-center border border-primary-200">
+        <ListTodo size={14} />
       </span>
     );
   }

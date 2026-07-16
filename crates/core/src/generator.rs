@@ -61,6 +61,8 @@ pub struct GenerateResult {
     pub content: String,
     pub commit_count: usize,
     pub screenshot_count: usize,
+    #[serde(default)]
+    pub todo_count: usize,
     pub report_id: i64,
 }
 
@@ -72,6 +74,9 @@ pub struct PreparedData {
     pub period_end: DateTime<Local>,
     pub work_logs: Vec<storage::WorkLog>,
     pub commits: Vec<git::Commit>,
+    /// 本周期内已完成的待办（按 completed_at）。
+    #[serde(default)]
+    pub completed_todos: Vec<storage::Todo>,
 }
 
 /// 计算 [`Kind`] 对应的时间区间 `[start, end)`。
@@ -169,12 +174,16 @@ pub fn collect_data(
             .collect()
     };
 
+    // ③ 本周期已完成的待办（主证据来源）
+    let completed_todos = storage.list_completed_todos(period_start, period_end)?;
+
     Ok(PreparedData {
         kind: kind.as_str().to_string(),
         period_start,
         period_end,
         work_logs,
         commits,
+        completed_todos,
     })
 }
 
@@ -226,6 +235,7 @@ pub async fn generate_report(
         .iter()
         .filter(|l| l.source == "screenshot")
         .count();
+    let todo_count = prepared.completed_todos.len();
 
     Ok(GenerateResult {
         kind: prepared.kind,
@@ -235,6 +245,7 @@ pub async fn generate_report(
         content,
         commit_count,
         screenshot_count,
+        todo_count,
         report_id,
     })
 }
@@ -252,7 +263,9 @@ fn pick_template(req_key: Option<&str>, cfg_default: &str) -> ReportTemplate {
     templates::default_template()
 }
 
-/// 拼接给 LLM 的 user 消息：报告类型、用户/团队、时间范围、Git 提交、截图摘要、用户备注、模板 hint。
+/// 拼接给 LLM 的 user 消息。
+///
+/// 证据优先级：**已完成待办（主）** > Git 提交 > 截图摘要 > 其他记录 > 用户补充。
 fn build_user_prompt(
     cfg: &Config,
     req: &GenerateRequest,
@@ -274,11 +287,29 @@ fn build_user_prompt(
         prepared.period_start.format("%Y-%m-%d %H:%M"),
         prepared.period_end.format("%Y-%m-%d %H:%M"),
     );
+    out.push_str(
+        "\n【重要】本报告请以「已完成待办」为主要事实来源撰写「完成事项」；\
+         Git 提交与截图仅作补充佐证，不要用截图臆造完成项。\n\n",
+    );
+
+    // —— 已完成待办（主证据） ——
+    out.push_str("## 已完成待办（优先依据）\n");
+    if prepared.completed_todos.is_empty() {
+        out.push_str("（本周期内无已完成待办）\n");
+    } else {
+        for t in &prepared.completed_todos {
+            let when = t
+                .completed_at
+                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                .unwrap_or_else(|| "??".to_string());
+            let _ = writeln!(out, "- [{}] {}", when, t.content);
+        }
+    }
     out.push('\n');
 
     // —— Git 提交清单 ——
     if req.include_git {
-        out.push_str("## Git 提交清单\n");
+        out.push_str("## Git 提交清单（补充）\n");
         if prepared.commits.is_empty() {
             out.push_str("（本周期内无提交）\n");
         } else {
@@ -304,7 +335,7 @@ fn build_user_prompt(
 
     // —— 截图分析摘要 ——
     if req.include_screenshots {
-        out.push_str("## 截图分析摘要\n");
+        out.push_str("## 截图分析摘要（补充）\n");
         let shots: Vec<&storage::WorkLog> = prepared
             .work_logs
             .iter()
@@ -332,11 +363,11 @@ fn build_user_prompt(
         out.push('\n');
     }
 
-    // —— 其他来源（手动录入等） ——
+    // —— 其他来源（手动录入等；todo 已在上方专节出现，这里排除） ——
     let others: Vec<&storage::WorkLog> = prepared
         .work_logs
         .iter()
-        .filter(|l| l.source != "screenshot" && l.source != "git")
+        .filter(|l| l.source != "screenshot" && l.source != "git" && l.source != "todo")
         .collect();
     if !others.is_empty() {
         out.push_str("## 其他工作记录\n");

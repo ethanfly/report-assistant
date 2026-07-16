@@ -64,6 +64,22 @@ pub struct Report {
     pub created_at: DateTime<Local>,
 }
 
+/// 一条待办事项（备忘录）。
+///
+/// - `status`: `pending` 未完成 / `done` 已完成
+/// - 完成时会同步写入一条 `source = "todo"` 的 work_log，并把其 id 记到 `work_log_id`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Todo {
+    pub id: i64,
+    pub content: String,
+    /// `pending` | `done`
+    pub status: String,
+    pub created_at: DateTime<Local>,
+    pub completed_at: Option<DateTime<Local>>,
+    /// 完成后关联的 work_logs.id；未完成时为 None
+    pub work_log_id: Option<i64>,
+}
+
 /// 清理操作结果。
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct PurgeStats {
@@ -78,6 +94,10 @@ pub struct StorageStats {
     pub reports_total: u64,
     pub earliest_log: Option<DateTime<Local>>,
     pub latest_log: Option<DateTime<Local>>,
+    #[serde(default)]
+    pub todos_pending: u64,
+    #[serde(default)]
+    pub todos_done: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +129,17 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 CREATE INDEX IF NOT EXISTS idx_reports_kind ON reports(kind);
 CREATE INDEX IF NOT EXISTS idx_reports_period ON reports(period_start, period_end);
+
+CREATE TABLE IF NOT EXISTS todos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    work_log_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
+CREATE INDEX IF NOT EXISTS idx_todos_created_at ON todos(created_at);
 "#;
 
 // ---------------------------------------------------------------------------
@@ -341,9 +372,233 @@ impl Storage {
         Ok(n > 0)
     }
 
+    // -------------------- todos --------------------
+
+    /// 新增一条待办，状态固定为 `pending`。
+    pub fn add_todo(&self, content: &str) -> Result<Todo> {
+        let content = content.trim();
+        if content.is_empty() {
+            return Err(Error::internal("待办内容不能为空"));
+        }
+        let now = Local::now();
+        let now_s = now.to_rfc3339();
+        let conn = self.pool.get()?;
+        conn.execute(
+            "INSERT INTO todos (content, status, created_at, completed_at, work_log_id) \
+             VALUES (?1, 'pending', ?2, NULL, NULL)",
+            params![content, now_s],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Todo {
+            id,
+            content: content.to_string(),
+            status: "pending".to_string(),
+            created_at: now,
+            completed_at: None,
+            work_log_id: None,
+        })
+    }
+
+    /// 列出待办。`status` 为 `Some("pending"|"done")` 时过滤；`None` 返回全部。
+    /// 排序：pending 在前，同状态按 created_at 倒序。
+    pub fn list_todos(&self, status: Option<&str>) -> Result<Vec<Todo>> {
+        let conn = self.pool.get()?;
+        let mut stmt;
+        let rows_iter = if let Some(st) = status {
+            stmt = conn.prepare(
+                "SELECT id, content, status, created_at, completed_at, work_log_id \
+                 FROM todos WHERE status = ?1 \
+                 ORDER BY datetime(created_at) DESC, id DESC",
+            )?;
+            stmt.query(params![st])?
+        } else {
+            stmt = conn.prepare(
+                "SELECT id, content, status, created_at, completed_at, work_log_id \
+                 FROM todos \
+                 ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, \
+                          datetime(created_at) DESC, id DESC",
+            )?;
+            stmt.query([])?
+        };
+        let mut rows = rows_iter;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            out.push(row_to_todo(row)?);
+        }
+        Ok(out)
+    }
+
+    /// 按 id 取一条待办。
+    pub fn get_todo(&self, id: i64) -> Result<Option<Todo>> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content, status, created_at, completed_at, work_log_id \
+             FROM todos WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row_to_todo(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 删除待办。不级联删除已写入的 work_log（历史记录保留）。
+    pub fn delete_todo(&self, id: i64) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let n = conn.execute("DELETE FROM todos WHERE id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    /// 更新待办正文（支持 Markdown）。已完成的待办也可改文案，不改状态。
+    pub fn update_todo(&self, id: i64, content: &str) -> Result<Todo> {
+        let content = content.trim();
+        if content.is_empty() {
+            return Err(Error::internal("待办内容不能为空"));
+        }
+        let conn = self.pool.get()?;
+        let n = conn.execute(
+            "UPDATE todos SET content = ?1 WHERE id = ?2",
+            params![content, id],
+        )?;
+        if n == 0 {
+            return Err(Error::internal(format!("待办不存在: {id}")));
+        }
+        // 若已关联 work_log，同步标题/正文，保持时间线一致
+        let todo = self
+            .get_todo(id)?
+            .ok_or_else(|| Error::internal(format!("待办不存在: {id}")))?;
+        if let Some(lid) = todo.work_log_id {
+            let _ = conn.execute(
+                "UPDATE work_logs SET title = ?1, content = ?2 WHERE id = ?3 AND source = 'todo'",
+                params![content, content, lid],
+            );
+        }
+        Ok(todo)
+    }
+
+    /// 完成待办：标记 done，并同步写入一条 `source="todo"` 的 work_log。
+    ///
+    /// 已完成的待办再次调用会返回现有记录（幂等）。
+    /// 返回 `(todo, 新写入的 work_log 或 None)`。
+    pub fn complete_todo(&self, id: i64) -> Result<(Todo, Option<WorkLog>)> {
+        let mut conn = self.pool.get()?;
+        let existing = {
+            let mut stmt = conn.prepare(
+                "SELECT id, content, status, created_at, completed_at, work_log_id \
+                 FROM todos WHERE id = ?1",
+            )?;
+            let mut rows = stmt.query(params![id])?;
+            match rows.next()? {
+                Some(row) => row_to_todo(row)?,
+                None => return Err(Error::internal(format!("待办不存在: {id}"))),
+            }
+        };
+
+        if existing.status == "done" {
+            // 幂等：已完成则直接返回；若有关联 work_log 再读出
+            let log = if let Some(lid) = existing.work_log_id {
+                self.get_work_log(lid)?
+            } else {
+                None
+            };
+            return Ok((existing, log));
+        }
+
+        let now = Local::now();
+        let now_s = now.to_rfc3339();
+        let meta = serde_json::json!({
+            "todo_id": id,
+            "todo_content": existing.content,
+        });
+        let meta_str = serde_json::to_string(&meta)?;
+
+        let tx = conn.transaction()?;
+        // 1) 写 work_log
+        tx.execute(
+            "INSERT INTO work_logs (ts, source, category, title, content, meta) \
+             VALUES (?1, 'todo', '待办', ?2, ?3, ?4)",
+            params![
+                now_s.clone(),
+                existing.content,
+                existing.content,
+                meta_str,
+            ],
+        )?;
+        let work_log_id = tx.last_insert_rowid();
+
+        // 2) 更新 todo
+        tx.execute(
+            "UPDATE todos SET status = 'done', completed_at = ?1, work_log_id = ?2 \
+             WHERE id = ?3",
+            params![now_s, work_log_id, id],
+        )?;
+        tx.commit()?;
+
+        let todo = Todo {
+            id,
+            content: existing.content.clone(),
+            status: "done".to_string(),
+            created_at: existing.created_at,
+            completed_at: Some(now),
+            work_log_id: Some(work_log_id),
+        };
+        let log = WorkLog {
+            id: work_log_id,
+            ts: now,
+            source: "todo".to_string(),
+            category: Some("待办".to_string()),
+            title: existing.content.clone(),
+            content: existing.content,
+            meta,
+            created_at: now,
+        };
+        Ok((todo, Some(log)))
+    }
+
+    /// 按 id 取一条 work_log。
+    pub fn get_work_log(&self, id: i64) -> Result<Option<WorkLog>> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, source, category, title, content, meta, created_at \
+             FROM work_logs WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row_to_work_log(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// 列出 `[start, end]` 闭区间内已完成的待办（按 completed_at）。
+    pub fn list_completed_todos(
+        &self,
+        start: DateTime<Local>,
+        end: DateTime<Local>,
+    ) -> Result<Vec<Todo>> {
+        let conn = self.pool.get()?;
+        let start_s = start.to_rfc3339();
+        let end_s = end.to_rfc3339();
+        let mut stmt = conn.prepare(
+            "SELECT id, content, status, created_at, completed_at, work_log_id \
+             FROM todos \
+             WHERE status = 'done' AND completed_at IS NOT NULL \
+               AND completed_at >= ?1 AND completed_at <= ?2 \
+             ORDER BY completed_at DESC",
+        )?;
+        let mut rows = stmt.query(params![start_s, end_s])?;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            out.push(row_to_todo(row)?);
+        }
+        Ok(out)
+    }
+
     // -------------------- 维护 --------------------
 
     /// 清理 `cutoff` 之前的 work_logs（按 `ts`）和 reports（按 `period_end`）。
+    /// 已完成且 completed_at 早于 cutoff 的 todos 一并清理；pending 保留。
     pub fn purge_before(&self, cutoff: DateTime<Local>) -> Result<PurgeStats> {
         let mut conn = self.pool.get()?;
         let cutoff_s = cutoff.to_rfc3339();
@@ -354,6 +609,10 @@ impl Storage {
         )?;
         let reports = tx.execute(
             "DELETE FROM reports WHERE period_end < ?1",
+            params![cutoff_s.clone()],
+        )?;
+        let _todos = tx.execute(
+            "DELETE FROM todos WHERE status = 'done' AND completed_at IS NOT NULL AND completed_at < ?1",
             params![cutoff_s],
         )?;
         tx.commit()?;
@@ -369,6 +628,7 @@ impl Storage {
         let tx = conn.transaction()?;
         let logs = tx.execute("DELETE FROM work_logs", [])?;
         let reports = tx.execute("DELETE FROM reports", [])?;
+        let _ = tx.execute("DELETE FROM todos", [])?;
         tx.commit()?;
         Ok(PurgeStats {
             work_logs: logs as u64,
@@ -387,12 +647,28 @@ impl Storage {
             )?;
         let reports_total: i64 =
             conn.query_row("SELECT COUNT(*) FROM reports", [], |row| row.get(0))?;
+        let todos_pending: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM todos WHERE status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let todos_done: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM todos WHERE status = 'done'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(StorageStats {
             work_logs_total: work_logs_total.max(0) as u64,
             reports_total: reports_total.max(0) as u64,
             earliest_log: earliest.as_deref().and_then(|s| parse_dt(s).ok()),
             latest_log: latest.as_deref().and_then(|s| parse_dt(s).ok()),
+            todos_pending: todos_pending.max(0) as u64,
+            todos_done: todos_done.max(0) as u64,
         })
     }
 }
@@ -445,6 +721,28 @@ fn row_to_report(row: &rusqlite::Row<'_>) -> Result<Report> {
         template,
         content,
         created_at: parse_dt(&created_at)?,
+    })
+}
+
+fn row_to_todo(row: &rusqlite::Row<'_>) -> Result<Todo> {
+    let id: i64 = row.get(0)?;
+    let content: String = row.get(1)?;
+    let status: String = row.get(2)?;
+    let created_at: String = row.get(3)?;
+    let completed_at: Option<String> = row.get(4)?;
+    let work_log_id: Option<i64> = row.get(5)?;
+
+    Ok(Todo {
+        id,
+        content,
+        status,
+        created_at: parse_dt(&created_at)?,
+        completed_at: completed_at
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(parse_dt)
+            .transpose()?,
+        work_log_id,
     })
 }
 

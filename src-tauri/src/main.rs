@@ -5,6 +5,7 @@
 //! 小T日报助手 Tauri 主进程入口。
 
 mod commands;
+mod popup;
 mod state;
 mod tray;
 
@@ -63,6 +64,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+        .plugin(popup::init_plugin())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::load_config,
@@ -87,9 +89,24 @@ fn main() {
             commands::export_report,
             commands::test_llm_connection,
             commands::open_log_dir,
+            commands::add_todo,
+            commands::list_todos,
+            commands::complete_todo,
+            commands::delete_todo,
+            commands::update_todo,
+            commands::show_todo_popup,
+            commands::show_todo_quick,
+            commands::show_todo_list,
         ])
         .setup(|app| {
             tray::setup(app.handle())?;
+
+            // 注册待办全局快捷键
+            {
+                let state: tauri::State<'_, crate::state::AppStateHandle> = app.state();
+                let todo_cfg = state.config.lock().todo.clone();
+                popup::register_hotkeys(app.handle(), &todo_cfg);
+            }
 
             // 正常启动（非开机自启）时显示主窗口。
             // 开机自启时通过 --hidden 参数静默启动到系统托盘。
@@ -169,10 +186,16 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 关闭按钮：隐藏到托盘，保持后台监听存活。
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                let label = window.label();
+                // 主窗口：隐藏到托盘，保持后台监听存活。
+                // 待办弹窗：真正关闭销毁，下次热键再创建。
+                if label == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                } else if label == "todo-popup" || label == "todo-quick" || label == "todo-list" {
+                    // 允许关闭销毁
+                }
             }
         })
         .run(tauri::generate_context!())

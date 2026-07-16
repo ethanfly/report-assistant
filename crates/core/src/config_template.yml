@@ -35,4 +35,9 @@ app:
   silent_launch: false
   cleanup_keep_days: 60
 
+todo:
+  # 全局快捷键：弹出「输入 + 列表」一体窗口（最小化/托盘时同样生效）
+  # 默认 Alt+Space；留空禁用
+  hotkey: Alt+Space
+
 db_path: ""

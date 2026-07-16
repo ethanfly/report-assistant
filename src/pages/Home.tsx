@@ -4,7 +4,6 @@ import dayjs from 'dayjs';
 import {
   Camera,
   GitBranch,
-  FileText,
   Activity,
   Play,
   Square,
@@ -13,6 +12,7 @@ import {
   CalendarDays,
   CalendarRange,
   CalendarClock,
+  ListTodo,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -21,7 +21,9 @@ import {
   captureOnce,
   generateReport,
   listMonitors,
+  listTodos,
   listWorkLogs,
+  showTodoPopup,
   startWatch,
   stopWatch,
   syncGit,
@@ -74,6 +76,8 @@ export default function Home() {
   const [logs, setLogs] = useState<WorkLog[]>([]);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pendingTodos, setPendingTodos] = useState(0);
+  const [todayDoneTodos, setTodayDoneTodos] = useState(0);
 
   const [busy, setBusy] = useState<{ [k: string]: boolean }>({});
 
@@ -84,6 +88,15 @@ export default function Home() {
       const end = dayjs().endOf('day').toISOString();
       const items = await listWorkLogs(start, end);
       setLogs(items);
+      // 待办统计
+      try {
+        const pending = await listTodos('pending');
+        setPendingTodos(pending.length);
+        const doneTodos = items.filter((l) => l.source === 'todo').length;
+        setTodayDoneTodos(doneTodos);
+      } catch {
+        /* ignore */
+      }
     } catch (e: any) {
       toast.error(`加载今日记录失败: ${e}`);
     } finally {
@@ -190,7 +203,7 @@ export default function Home() {
           include_git: true,
         });
         toast.success(
-          `已生成今日日报（提交 ${r.commit_count} 条 / 截图 ${r.screenshot_count} 条）`
+          `已生成今日日报（待办 ${r.todo_count ?? 0} / 提交 ${r.commit_count} / 截图 ${r.screenshot_count}）`
         );
       } catch (e: any) {
         const raw =
@@ -244,6 +257,13 @@ export default function Home() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          label="待办"
+          value={pendingTodos}
+          icon={<ListTodo size={20} className="text-primary-700" />}
+          accent="bg-primary-50"
+          hint={todayDoneTodos > 0 ? `今日完成 ${todayDoneTodos}` : '未完成'}
+        />
+        <StatCard
           label="今日提交"
           value={todayCommits}
           icon={<GitBranch size={20} className="text-primary-700" />}
@@ -254,12 +274,6 @@ export default function Home() {
           value={todayShots}
           icon={<Camera size={20} className="text-primary-700" />}
           accent="bg-primary-100"
-        />
-        <StatCard
-          label="今日条目"
-          value={logs.length}
-          icon={<FileText size={20} className="text-accent-600" />}
-          accent="bg-accent-50"
         />
         <StatCard
           label="监听状态"
@@ -334,6 +348,19 @@ export default function Home() {
               className="w-full"
             >
               同步 Git
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              icon={<ListTodo size={14} />}
+              onClick={() => {
+                void showTodoPopup().catch((e) =>
+                  toast.error(`打开待办失败: ${e}`)
+                );
+              }}
+              className="w-full"
+            >
+              待办 (Alt+Space)
             </Button>
             <Button
               variant="primary"

@@ -703,8 +703,8 @@ async fn cmd_report_generate(kind: Kind, args: GenArgs, json: bool) -> Result<()
             result.period_end.format("%Y-%m-%d %H:%M"),
         );
         println!(
-            "  数据：{} 条提交，{} 条截图记录",
-            result.commit_count, result.screenshot_count
+            "  数据：{} 条已完成待办，{} 条提交，{} 条截图记录",
+            result.todo_count, result.commit_count, result.screenshot_count
         );
         println!("---");
         println!("{}", result.content);

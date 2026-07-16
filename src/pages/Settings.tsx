@@ -854,60 +854,82 @@ export default function Settings() {
 
         {/* App */}
         {tab === 'app' && (
-          <Card
-            title="应用"
-            description="开机自启与数据保留策略"
-            hoverable={false}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex items-center gap-2 text-sm self-end pb-2 text-ink">
-                <input
-                  type="checkbox"
-                  checked={draft.app.auto_launch_on_boot}
+          <>
+            <Card
+              title="应用"
+              description="开机自启与数据保留策略"
+              hoverable={false}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 text-sm self-end pb-2 text-ink">
+                  <input
+                    type="checkbox"
+                    checked={draft.app.auto_launch_on_boot}
+                    onChange={(e) =>
+                      update('app', {
+                        ...draft.app,
+                        auto_launch_on_boot: e.target.checked,
+                      })
+                    }
+                    className="accent-primary"
+                  />
+                  开机自启
+                </label>
+                <label className="flex items-center gap-2 text-sm self-end pb-2 text-ink">
+                  <input
+                    type="checkbox"
+                    checked={draft.app.silent_launch}
+                    onChange={(e) =>
+                      update('app', {
+                        ...draft.app,
+                        silent_launch: e.target.checked,
+                      })
+                    }
+                    className="accent-primary"
+                  />
+                  静默启动（不显示窗口）
+                </label>
+                <Input
+                  label="自动清理（天数，0 关闭）"
+                  type="number"
+                  min="0"
+                  value={draft.app.cleanup_keep_days}
                   onChange={(e) =>
                     update('app', {
                       ...draft.app,
-                      auto_launch_on_boot: e.target.checked,
+                      cleanup_keep_days: Number(e.target.value),
                     })
                   }
-                  className="accent-primary"
                 />
-                开机自启
-              </label>
-              <label className="flex items-center gap-2 text-sm self-end pb-2 text-ink">
-                <input
-                  type="checkbox"
-                  checked={draft.app.silent_launch}
+                <Input
+                  label="数据库路径"
+                  value={draft.db_path}
+                  onChange={(e) => update('db_path', e.target.value)}
+                  hint="留空使用默认位置"
+                />
+              </div>
+            </Card>
+            <Card
+              title="待办快捷键"
+              description="全局热键弹出「输入 + 列表」一体窗口（主窗口最小化/托盘时同样生效）。留空禁用"
+              hoverable={false}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input
+                  label="唤起待办弹窗"
+                  value={draft.todo?.hotkey ?? 'Alt+Space'}
                   onChange={(e) =>
-                    update('app', {
-                      ...draft.app,
-                      silent_launch: e.target.checked,
+                    update('todo', {
+                      ...(draft.todo ?? { hotkey: 'Alt+Space' }),
+                      hotkey: e.target.value,
                     })
                   }
-                  className="accent-primary"
+                  placeholder="Alt+Space"
+                  hint="默认 Alt+Space · 格式如 Alt+Space / CommandOrControl+Shift+T"
                 />
-                静默启动（不显示窗口）
-              </label>
-              <Input
-                label="自动清理（天数，0 关闭）"
-                type="number"
-                min="0"
-                value={draft.app.cleanup_keep_days}
-                onChange={(e) =>
-                  update('app', {
-                    ...draft.app,
-                    cleanup_keep_days: Number(e.target.value),
-                  })
-                }
-              />
-              <Input
-                label="数据库路径"
-                value={draft.db_path}
-                onChange={(e) => update('db_path', e.target.value)}
-                hint="留空使用默认位置"
-              />
-            </div>
-          </Card>
+              </div>
+            </Card>
+          </>
         )}
 
         {/* Data */}

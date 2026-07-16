@@ -179,7 +179,7 @@ export default function Reports() {
         include_git: includeGit,
       });
       toast.success(
-        `已生成${kindLabel(r.kind)}（提交 ${r.commit_count} / 截图 ${r.screenshot_count}）`
+        `已生成${kindLabel(r.kind)}（待办 ${r.todo_count ?? 0} / 提交 ${r.commit_count} / 截图 ${r.screenshot_count}）`
       );
       await refresh();
       const full = await getReport(r.report_id);

@@ -9,10 +9,11 @@ use crate::state::AppStateHandle;
 /// 在 `setup` 阶段调用一次即可。失败会向上冒泡阻止启动。
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let todos = MenuItem::with_id(app, "todo_popup", "待办 (Alt+Space)", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle_watch", "切换监听", true, None::<&str>)?;
     let logs = MenuItem::with_id(app, "open_logs", "打开日志目录", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &toggle, &logs, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &todos, &toggle, &logs, &quit])?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
@@ -23,6 +24,11 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                     let _ = w.show();
                     let _ = w.unminimize();
                     let _ = w.set_focus();
+                }
+            }
+            "todo_popup" | "todo_quick" | "todo_list" => {
+                if let Err(e) = crate::popup::show_todo_popup(app) {
+                    tracing::warn!("托盘打开待办弹窗失败: {e}");
                 }
             }
             "toggle_watch" => {

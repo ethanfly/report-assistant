@@ -36,4 +36,8 @@ report:
   user_name: 张三
   team: 平台研发组
 
+todo:
+  # 全局快捷键：弹出「输入 + 列表」一体窗口；留空禁用
+  hotkey: Alt+Space
+
 db_path: ~/.report-assistant/data.sqlite

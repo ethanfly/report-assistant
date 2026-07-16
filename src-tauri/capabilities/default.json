@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "默认窗口能力：允许前端通过 JS 调用窗口控制 API（最小化、最大化、关闭等）以及对话框、文件打开器与单实例插件",
-  "windows": ["main"],
+  "description": "默认窗口能力：主窗 + 待办弹窗；窗口控制、对话框、全局快捷键",
+  "windows": ["main", "todo-popup", "todo-quick", "todo-list"],
   "permissions": [
     "core:default",
     "core:window:default",
@@ -15,6 +15,8 @@
     "core:window:allow-close",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
+    "core:window:allow-center",
+    "core:window:allow-set-always-on-top",
     "core:webview:default",
     "core:event:default",
     "core:app:default",
@@ -27,6 +29,10 @@
     "dialog:allow-open",
     "opener:default",
     "opener:allow-open-path",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all"
   ]
 }

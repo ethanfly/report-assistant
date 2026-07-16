@@ -11,6 +11,7 @@ import type {
   Report,
   ReportTemplate,
   StorageStats,
+  Todo,
   WatchEvent,
   WorkLog,
 } from './types';
@@ -59,6 +60,35 @@ export const syncGit = () => invoke<number>('sync_git');
 // ===== 时间线手动记录 =====
 export const addManualLog = (description: string, ts?: string) =>
   invoke<WorkLog>('add_manual_log', { description, ts });
+
+// ===== 待办 =====
+export const addTodo = (content: string) =>
+  invoke<Todo>('add_todo', { content });
+
+export const listTodos = (status?: string) =>
+  invoke<Todo[]>('list_todos', { status });
+
+export const completeTodo = (id: number) =>
+  invoke<Todo>('complete_todo', { id });
+
+export const deleteTodo = (id: number) =>
+  invoke<boolean>('delete_todo', { id });
+
+export const updateTodo = (id: number, content: string) =>
+  invoke<Todo>('update_todo', { id, content });
+
+/** 打开待办一体弹窗（输入 + 列表） */
+export const showTodoPopup = () => invoke<void>('show_todo_popup');
+
+/** @deprecated 使用 showTodoPopup */
+export const showTodoQuick = () => invoke<void>('show_todo_popup');
+
+/** @deprecated 使用 showTodoPopup */
+export const showTodoList = () => invoke<void>('show_todo_popup');
+
+export const onTodosChanged = (
+  cb: () => void
+): Promise<UnlistenFn> => listen('todos-changed', () => cb());
 
 // ===== 报告 =====
 export const generateReport = (request: GenerateRequest) =>

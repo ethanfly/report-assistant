@@ -3,6 +3,7 @@ import {
   Home as HomeIcon,
   Clock,
   FileText,
+  ListTodo,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import { useWatchStatus } from '../hooks/useWatchStatus';
@@ -11,6 +12,7 @@ import clsx from 'clsx';
 
 const items = [
   { to: '/home', label: '首页', icon: HomeIcon },
+  { to: '/todos', label: '待办', icon: ListTodo },
   { to: '/timeline', label: '时间线', icon: Clock },
   { to: '/reports', label: '报告', icon: FileText },
   { to: '/settings', label: '设置', icon: SettingsIcon },

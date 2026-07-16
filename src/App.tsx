@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import Timeline from './pages/Timeline';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Todos from './pages/Todos';
 import { ToastProvider } from './hooks/useToast';
 
 export default function App() {
@@ -31,6 +32,7 @@ function RoutesWithFade() {
       <Routes location={loc}>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/home" element={<Home />} />
+        <Route path="/todos" element={<Todos />} />
         <Route path="/timeline" element={<Timeline />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
